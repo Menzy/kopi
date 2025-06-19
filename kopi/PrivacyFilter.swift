@@ -59,36 +59,35 @@ class PrivacyFilter {
     
     // MARK: - Source App Exclusions
     
+    // Only blocks truly sensitive applications (password managers, banking apps, system security tools)
+    // Development tools like Xcode, VS Code, editors are now allowed by default
+    // Users can add custom exclusions through settings if needed
     private func checkSourceAppExclusions(_ bundleID: String) -> String? {
         let excludedApps = [
-            // Password Managers
+            // Password Managers - These should always be blocked
             "com.1password.1password7",
             "com.agilebits.onepassword7",
+            "com.agilebits.onepassword-osx",
             "com.bitwarden.desktop",
             "com.lastpass.LastPass",
             "com.apple.keychainaccess",
+            "com.dashlane.dashlane",
+            "com.keeper.KeeperDesktop",
             
-            // Banking & Financial Apps
+            // Banking & Financial Apps - Sensitive financial data
             "com.apple.wallet",
             "com.mint.Mint",
             "com.quicken.Quicken2017",
+            "com.intuit.QuickBooks",
             
-            // Screenshot Utilities
-            "com.apple.screencapture",
-            "com.cleanmymac.CleanMyMac4",
-            "com.techsmith.snagit2022",
-            "com.skitch.skitch",
-            
-            // System Utilities
+            // System Security & Admin Tools - May contain sensitive system info
             "com.apple.systempreferences",
             "com.apple.ActivityMonitor",
             "com.apple.Console",
+            "com.apple.Keychain-Access",
             
-            // Development Tools with Sensitive Data
-            "com.apple.dt.Xcode",
-            "com.github.atom",
-            "com.microsoft.VSCode",
-            "com.sublimetext.3"
+            // Terminal/SSH apps when dealing with secure sessions
+            // Note: We could make this configurable later if users want to block terminals
         ]
         
         if excludedApps.contains(bundleID) {
@@ -132,11 +131,11 @@ class PrivacyFilter {
     // MARK: - Pattern Detection Methods
     
     private func isLikelyPassword(_ content: String) -> Bool {
-        // Password heuristics
+        // More conservative password detection to avoid blocking code snippets
         let length = content.count
         
         // Too short or too long to be a typical password
-        guard length >= 6 && length <= 128 else { return false }
+        guard length >= 8 && length <= 64 else { return false }
         
         // Check for typical password characteristics
         let hasUppercase = content.rangeOfCharacter(from: .uppercaseLetters) != nil
@@ -147,14 +146,20 @@ class PrivacyFilter {
         // No whitespace (passwords typically don't have spaces)
         let hasWhitespace = content.rangeOfCharacter(from: .whitespacesAndNewlines) != nil
         
+        // Don't block content with common code patterns
+        let hasCodePatterns = content.contains("=") || content.contains("(") || content.contains("{") || 
+                             content.contains("//") || content.contains("/*") || content.contains("class ") ||
+                             content.contains("func ") || content.contains("var ") || content.contains("let ")
+        
         // Count how many character types are present
         let characterTypeCount = [hasUppercase, hasLowercase, hasNumbers, hasSpecialChars].filter { $0 }.count
         
-        // Likely a password if:
-        // - Has at least 3 different character types
+        // More strict criteria for password detection:
+        // - Must have all 4 character types (very strong password pattern)
         // - No whitespace
-        // - Length is in typical password range
-        return characterTypeCount >= 3 && !hasWhitespace && length >= 8
+        // - No obvious code patterns
+        // - Length between 8-64 characters
+        return characterTypeCount == 4 && !hasWhitespace && !hasCodePatterns && length >= 10
     }
     
     private func containsCreditCardNumber(_ content: String) -> Bool {

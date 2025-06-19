@@ -11,6 +11,7 @@ import SwiftUI
 struct kopiApp: App {
     let persistenceController = PersistenceController.shared
     @StateObject private var clipboardMonitor = ClipboardMonitor.shared
+    @StateObject private var keyboardManager = KeyboardShortcutManager.shared
 
     var body: some Scene {
         WindowGroup {
@@ -18,13 +19,33 @@ struct kopiApp: App {
                 .environment(\.managedObjectContext, persistenceController.container.viewContext)
                 .environmentObject(clipboardMonitor)
                 .onAppear {
-                    // Start clipboard monitoring when app appears
-                    clipboardMonitor.startMonitoring()
+                    setupApp()
                 }
                 .onDisappear {
-                    // Stop monitoring when app disappears
-                    clipboardMonitor.stopMonitoring()
+                    teardownApp()
                 }
         }
+        .windowResizability(.contentSize)
+        .defaultSize(width: 800, height: 600)
+    }
+    
+    private func setupApp() {
+        // Start clipboard monitoring
+        clipboardMonitor.startMonitoring()
+        
+        // Register global keyboard shortcuts
+        keyboardManager.registerGlobalShortcut()
+        
+        print("✅ Kopi app initialized successfully")
+    }
+    
+    private func teardownApp() {
+        // Stop monitoring
+        clipboardMonitor.stopMonitoring()
+        
+        // Unregister shortcuts
+        keyboardManager.unregisterGlobalShortcut()
+        
+        print("👋 Kopi app shut down")
     }
 }

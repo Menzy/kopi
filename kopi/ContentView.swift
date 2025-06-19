@@ -9,217 +9,382 @@ import SwiftUI
 import CoreData
 
 struct ContentView: View {
-    @Environment(\.managedObjectContext) private var viewContext
     @StateObject private var dataManager = ClipboardDataManager.shared
-    @EnvironmentObject private var clipboardMonitor: ClipboardMonitor
-
-    @FetchRequest(
-        sortDescriptors: [NSSortDescriptor(keyPath: \ClipboardItem.timestamp, ascending: false)],
-        predicate: NSPredicate(format: "isTransient == NO"),
-        animation: .default)
-    private var clipboardItems: FetchedResults<ClipboardItem>
-
+    @StateObject private var keyboardShortcutManager = KeyboardShortcutManager.shared
+    
+    @State private var selectedFilter: SidebarFilter = .all
+    @State private var searchText = ""
+    @State private var contentTypeFilter: ContentType? = nil
+    @State private var sortOrder: SortOrder = .newestFirst
+    @State private var showingQuickPaste = false
+    
+    @State private var clipboardItems: [ClipboardItem] = []
+    @State private var availableApps: [AppInfo] = []
+    @State private var totalItemCount: Int = 0
+    
+    var filteredItems: [ClipboardItem] {
+        var items = clipboardItems
+        
+        // Apply sidebar filter
+        switch selectedFilter {
+        case .all:
+            // Show all items
+            break
+        case .app(let bundleID):
+            items = items.filter { $0.sourceApp == bundleID }
+        }
+        
+        // Apply search text filter
+        if !searchText.isEmpty {
+            items = items.filter { item in
+                item.content?.localizedCaseInsensitiveContains(searchText) == true ||
+                item.sourceAppName?.localizedCaseInsensitiveContains(searchText) == true
+            }
+        }
+        
+        // Apply content type filter
+        if let contentTypeFilter = contentTypeFilter {
+            items = items.filter { $0.contentType == contentTypeFilter.rawValue }
+        }
+        
+        // Apply sorting
+        switch sortOrder {
+        case .newestFirst:
+            items.sort { ($0.timestamp ?? Date.distantPast) > ($1.timestamp ?? Date.distantPast) }
+        case .oldestFirst:
+            items.sort { ($0.timestamp ?? Date.distantPast) < ($1.timestamp ?? Date.distantPast) }
+        case .byApp:
+            items.sort { 
+                if $0.sourceAppName == $1.sourceAppName {
+                    return ($0.timestamp ?? Date.distantPast) > ($1.timestamp ?? Date.distantPast)
+                }
+                return ($0.sourceAppName ?? "") < ($1.sourceAppName ?? "")
+            }
+        }
+        
+        return items
+    }
+    
     var body: some View {
-        NavigationView {
-            VStack {
-                if clipboardItems.isEmpty {
-                    EmptyStateView()
-                } else {
-                    List {
-                        ForEach(clipboardItems, id: \.id) { item in
-                            ClipboardItemRow(item: item)
-                        }
-                        .onDelete(perform: deleteItems)
-                    }
-                }
+        NavigationSplitView {
+            // Sidebar
+            SidebarView(
+                selectedFilter: $selectedFilter,
+                availableApps: availableApps,
+                totalItemCount: totalItemCount
+            )
+            .onAppear {
+                refreshData()
             }
-                        .navigationTitle("Clipboard History")
-            .toolbar {
-                ToolbarItemGroup(placement: .primaryAction) {
-                    Button(action: toggleMonitoring) {
-                        Label(
-                            clipboardMonitor.isMonitoring ? "Stop Monitoring" : "Start Monitoring",
-                            systemImage: clipboardMonitor.isMonitoring ? "pause.circle" : "play.circle"
-                        )
-                    }
-                    .foregroundColor(clipboardMonitor.isMonitoring ? .red : .green)
-                    
-                    Button(action: addTestItem) {
-                        Label("Add Test Item", systemImage: "plus")
-                    }
-                    
-                    Button(action: clearAll) {
-                        Label("Clear All", systemImage: "trash")
-                    }
-                    .disabled(clipboardItems.isEmpty)
-                }
+        } detail: {
+            // Main content area
+            VStack(spacing: 0) {
+                // Toolbar
+                ToolbarView(
+                    searchText: $searchText,
+                    contentTypeFilter: $contentTypeFilter,
+                    sortOrder: $sortOrder,
+                    onRefresh: refreshData
+                )
                 
-                ToolbarItemGroup(placement: .status) {
-                    HStack {
-                        Circle()
-                            .fill(clipboardMonitor.isMonitoring ? .green : .gray)
-                            .frame(width: 8, height: 8)
-                        Text(clipboardMonitor.isMonitoring ? "Monitoring" : "Stopped")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
+                Divider()
+                
+                // Grid view
+                ClipboardGridView(
+                    items: filteredItems,
+                    onCopy: { item in
+                        dataManager.copyToClipboard(item)
+                    },
+                    onDelete: { item in
+                        dataManager.deleteClipboardItem(item)
+                        refreshData()
+                    },
+                    onPin: { item in
+                        dataManager.togglePin(for: item)
+                        refreshData()
                     }
-                }
+                )
             }
+            .navigationTitle(titleForCurrentFilter)
         }
-    }
-
-    private func addTestItem() {
-        let testContent = "Test clipboard item - \(Date().formatted())"
-        _ = dataManager.createClipboardItem(
-            content: testContent,
-            contentType: .text,
-            sourceApp: "com.apple.finder",
-            sourceAppName: "Finder"
-        )
-    }
-
-    private func deleteItems(offsets: IndexSet) {
-        withAnimation {
-            offsets.map { clipboardItems[$0] }.forEach { item in
-                dataManager.deleteClipboardItem(item)
-            }
+        .onAppear {
+            setupKeyboardShortcuts()
+            refreshData()
+        }
+        .onChange(of: selectedFilter) {
+            refreshData()
+        }
+        .sheet(isPresented: $showingQuickPaste) {
+            QuickPasteView()
         }
     }
     
-        private func clearAll() {
-        withAnimation {
-            clipboardItems.forEach { item in
-                dataManager.deleteClipboardItem(item)
-            }
+    private var titleForCurrentFilter: String {
+        switch selectedFilter {
+        case .all:
+            return "All Clipboard Items"
+        case .app(let bundleID):
+            let appName = availableApps.first(where: { $0.bundleID == bundleID })?.name ?? "Unknown App"
+            return appName
         }
     }
     
-    private func toggleMonitoring() {
-        if clipboardMonitor.isMonitoring {
-            clipboardMonitor.stopMonitoring()
-        } else {
-            clipboardMonitor.startMonitoring()
+    private func setupKeyboardShortcuts() {
+        keyboardShortcutManager.onShortcutPressed = {
+            DispatchQueue.main.async {
+                showingQuickPaste = true
+            }
+        }
+        keyboardShortcutManager.registerGlobalShortcut()
+    }
+    
+    private func refreshData() {
+        DispatchQueue.main.async {
+            clipboardItems = dataManager.getRecentItems(limit: 500)
+            availableApps = dataManager.getAppStatistics()
+            totalItemCount = dataManager.getTotalItemCount()
         }
     }
 }
 
-struct ClipboardItemRow: View {
-    let item: ClipboardItem
-    @StateObject private var dataManager = ClipboardDataManager.shared
+// MARK: - Toolbar View
+
+struct ToolbarView: View {
+    @Binding var searchText: String
+    @Binding var contentTypeFilter: ContentType?
+    @Binding var sortOrder: SortOrder
+    let onRefresh: () -> Void
     
     var body: some View {
-        HStack {
-            VStack(alignment: .leading, spacing: 4) {
+        HStack(spacing: 12) {
+            // Search field
+            HStack {
+                Image(systemName: "magnifyingglass")
+                    .foregroundColor(.secondary)
+                
+                TextField("Search clipboard items...", text: $searchText)
+                    .textFieldStyle(.plain)
+                
+                if !searchText.isEmpty {
+                    Button(action: { searchText = "" }) {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundColor(.secondary)
+                    }
+                    .buttonStyle(PlainButtonStyle())
+                }
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 6)
+            .background(
+                RoundedRectangle(cornerRadius: 6)
+                    .fill(Color(NSColor.controlBackgroundColor))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 6)
+                            .stroke(Color(NSColor.separatorColor), lineWidth: 0.5)
+                    )
+            )
+            .frame(maxWidth: 300)
+            
+            Spacer()
+            
+            // Filter buttons
+            HStack(spacing: 8) {
+                // Content type filter
+                Menu {
+                    Button("All Types") {
+                        contentTypeFilter = nil
+                    }
+                    
+                    Divider()
+                    
+                    Button("Text") {
+                        contentTypeFilter = .text
+                    }
+                    
+                    Button("URLs") {
+                        contentTypeFilter = .url
+                    }
+                    
+                    Button("Images") {
+                        contentTypeFilter = .image
+                    }
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "line.3.horizontal.decrease.circle")
+                        Text(contentTypeFilter?.rawValue.capitalized ?? "All Types")
+                    }
+                    .font(.caption)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                
+                // Sort order
+                Menu {
+                    Button("Newest First") {
+                        sortOrder = .newestFirst
+                    }
+                    
+                    Button("Oldest First") {
+                        sortOrder = .oldestFirst
+                    }
+                    
+                    Button("By App") {
+                        sortOrder = .byApp
+                    }
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "arrow.up.arrow.down")
+                        Text(sortOrder.displayName)
+                    }
+                    .font(.caption)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                
+                // Refresh button
+                Button(action: onRefresh) {
+                    Image(systemName: "arrow.clockwise")
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .background(Color(NSColor.controlBackgroundColor).opacity(0.8))
+    }
+}
+
+// MARK: - Quick Paste View
+
+struct QuickPasteView: View {
+    @StateObject private var dataManager = ClipboardDataManager.shared
+    @Environment(\.dismiss) private var dismiss
+    
+    @State private var recentItems: [ClipboardItem] = []
+    
+    var body: some View {
+        VStack(spacing: 0) {
+            // Header
+            HStack {
+                Text("Quick Paste")
+                    .font(.headline)
+                
+                Spacer()
+                
+                Button("Close") {
+                    dismiss()
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+            }
+            .padding()
+            
+            Divider()
+            
+            // Items list
+            ScrollView {
+                LazyVStack(spacing: 1) {
+                    ForEach(Array(recentItems.prefix(10).enumerated()), id: \.element.objectID) { index, item in
+                        QuickPasteItemRow(
+                            item: item,
+                            number: index + 1,
+                            onSelect: {
+                                dataManager.copyToClipboard(item)
+                                dismiss()
+                            }
+                        )
+                    }
+                }
+            }
+            .frame(maxHeight: 400)
+        }
+        .frame(width: 500)
+        .background(Color(NSColor.windowBackgroundColor))
+        .onAppear {
+            recentItems = dataManager.getRecentItems(limit: 10)
+        }
+    }
+}
+
+struct QuickPasteItemRow: View {
+    let item: ClipboardItem
+    let number: Int
+    let onSelect: () -> Void
+    
+    @State private var isHovered = false
+    
+    var body: some View {
+        HStack(spacing: 12) {
+            // Number badge
+            Text("\(number)")
+                .font(.caption.monospacedDigit())
+                .fontWeight(.medium)
+                .foregroundColor(.white)
+                .frame(width: 20, height: 20)
+                .background(Circle().fill(Color.accentColor))
+            
+            // Content preview
+            VStack(alignment: .leading, spacing: 2) {
+                Text(item.content?.prefix(60) ?? "")
+                    .lineLimit(1)
+                    .font(.body)
+                
                 HStack {
-                    Image(systemName: contentType.systemImage)
-                        .foregroundColor(.secondary)
-                    
-                    Text(contentType.displayName)
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                    
-                    if item.isPinned {
-                        Image(systemName: "pin.fill")
-                            .foregroundColor(.orange)
+                    if let appName = item.sourceAppName {
+                        Text(appName)
                             .font(.caption)
+                            .foregroundColor(.secondary)
                     }
                     
                     Spacer()
                     
-                    Text(item.timestamp?.formatted(.relative(presentation: .named)) ?? "Unknown")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-                
-                Text(item.contentPreview ?? item.content ?? "No content")
-                    .lineLimit(2)
-                    .font(.body)
-                
-                if let sourceAppName = item.sourceAppName {
-                    HStack {
-                        // Show app icon if available, otherwise use system icon
-                        if let iconData = item.sourceAppIcon,
-                           let nsImage = NSImage(data: iconData) {
-                            Image(nsImage: nsImage)
-                                .resizable()
-                                .frame(width: 12, height: 12)
-                        } else {
-                            Image(systemName: "app")
-                                .font(.caption2)
-                        }
-                        
-                        Text(sourceAppName)
-                            .font(.caption2)
-                        Spacer()
-                        Text(item.deviceOrigin ?? "Unknown")
-                            .font(.caption2)
-                            .foregroundColor(.secondary)
-                    }
-                    .foregroundColor(.secondary)
+                    ContentTypeBadge(contentType: ContentType(rawValue: item.contentType ?? "text") ?? .text)
                 }
             }
             
             Spacer()
-            
-            Button(action: {
-                dataManager.togglePin(for: item)
-            }) {
-                Image(systemName: item.isPinned ? "pin.fill" : "pin")
-                    .foregroundColor(item.isPinned ? .orange : .secondary)
-            }
-            .buttonStyle(PlainButtonStyle())
         }
-        .padding(.vertical, 2)
-        .contextMenu {
-            Button("Copy to Clipboard") {
-                copyToClipboard()
-            }
-            
-            Button(item.isPinned ? "Unpin" : "Pin") {
-                dataManager.togglePin(for: item)
-            }
-            
-            Divider()
-            
-            Button("Delete", role: .destructive) {
-                dataManager.deleteClipboardItem(item)
-            }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 8)
+        .background(
+            Rectangle()
+                .fill(isHovered ? Color(NSColor.selectedControlColor).opacity(0.3) : Color.clear)
+        )
+        .contentShape(Rectangle())
+        .onHover { hovering in
+            isHovered = hovering
         }
-    }
-    
-    private var contentType: ContentType {
-        ContentType(rawValue: item.contentType ?? "text") ?? .text
-    }
-    
-    private func copyToClipboard() {
-        #if os(macOS)
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(item.content ?? "", forType: .string)
-        #endif
+        .onTapGesture {
+            onSelect()
+        }
     }
 }
 
-struct EmptyStateView: View {
-    var body: some View {
-        VStack(spacing: 16) {
-            Image(systemName: "doc.on.clipboard")
-                .font(.system(size: 48))
-                .foregroundColor(.secondary)
-            
-            Text("No Clipboard History")
-                .font(.title2)
-                .fontWeight(.medium)
-            
-            Text("Your clipboard history will appear here")
-                .font(.body)
-                .foregroundColor(.secondary)
-                .multilineTextAlignment(.center)
+// MARK: - Sort Order
+
+enum SortOrder: String, CaseIterable {
+    case newestFirst = "newest"
+    case oldestFirst = "oldest"
+    case byApp = "app"
+    
+    var displayName: String {
+        switch self {
+        case .newestFirst: return "Newest First"
+        case .oldestFirst: return "Oldest First"
+        case .byApp: return "By App"
         }
-        .padding()
+    }
+    
+    var systemImage: String {
+        switch self {
+        case .newestFirst: return "arrow.down"
+        case .oldestFirst: return "arrow.up"
+        case .byApp: return "app.fill"
+        }
     }
 }
 
 #Preview {
     ContentView()
-        .environment(\.managedObjectContext, PersistenceController.preview.container.viewContext)
 }

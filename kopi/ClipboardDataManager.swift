@@ -8,6 +8,7 @@
 import Foundation
 import CoreData
 import CloudKit
+import AppKit
 
 class ClipboardDataManager: ObservableObject {
     static let shared = ClipboardDataManager()
@@ -87,6 +88,154 @@ class ClipboardDataManager: ObservableObject {
     func markAsSensitive(_ item: ClipboardItem) {
         item.isSensitive = true
         saveContext()
+    }
+    
+    // MARK: - Enhanced Query Methods
+    
+    func getRecentItems(limit: Int = 50) -> [ClipboardItem] {
+        let request: NSFetchRequest<ClipboardItem> = ClipboardItem.fetchRequest()
+        request.predicate = NSPredicate(format: "isTransient == NO")
+        request.sortDescriptors = [NSSortDescriptor(keyPath: \ClipboardItem.timestamp, ascending: false)]
+        request.fetchLimit = limit
+        
+        do {
+            return try viewContext.fetch(request)
+        } catch {
+            print("❌ Failed to fetch recent items: \(error)")
+            return []
+        }
+    }
+    
+    func getAvailableApps() -> [String] {
+        let request: NSFetchRequest<NSFetchRequestResult> = ClipboardItem.fetchRequest()
+        request.predicate = NSPredicate(format: "isTransient == NO AND sourceAppName != nil")
+        request.resultType = .dictionaryResultType
+        request.propertiesToFetch = ["sourceAppName"]
+        request.returnsDistinctResults = true
+        
+        do {
+            let results = try viewContext.fetch(request) as? [[String: Any]] ?? []
+            return results.compactMap { $0["sourceAppName"] as? String }.sorted()
+        } catch {
+            print("❌ Failed to fetch available apps: \(error)")
+            return []
+        }
+    }
+    
+    func searchItems(
+        searchText: String? = nil,
+        contentType: ContentType? = nil,
+        sourceApp: String? = nil,
+        pinnedOnly: Bool = false,
+        sortOrder: SortOrder = .newestFirst
+    ) -> [ClipboardItem] {
+        let request: NSFetchRequest<ClipboardItem> = ClipboardItem.fetchRequest()
+        
+        var predicates: [NSPredicate] = [NSPredicate(format: "isTransient == NO")]
+        
+        // Search text
+        if let searchText = searchText, !searchText.isEmpty {
+            predicates.append(NSPredicate(format: "content CONTAINS[cd] %@", searchText))
+        }
+        
+        // Content type filter
+        if let contentType = contentType {
+            predicates.append(NSPredicate(format: "contentType == %@", contentType.rawValue))
+        }
+        
+        // Source app filter
+        if let sourceApp = sourceApp {
+            predicates.append(NSPredicate(format: "sourceAppName == %@", sourceApp))
+        }
+        
+        // Pinned only
+        if pinnedOnly {
+            predicates.append(NSPredicate(format: "isPinned == YES"))
+        }
+        
+        request.predicate = NSCompoundPredicate(andPredicateWithSubpredicates: predicates)
+        
+        // Sort descriptors
+        switch sortOrder {
+        case .newestFirst:
+            request.sortDescriptors = [NSSortDescriptor(keyPath: \ClipboardItem.timestamp, ascending: false)]
+        case .oldestFirst:
+            request.sortDescriptors = [NSSortDescriptor(keyPath: \ClipboardItem.timestamp, ascending: true)]
+        case .byApp:
+            request.sortDescriptors = [
+                NSSortDescriptor(keyPath: \ClipboardItem.sourceAppName, ascending: true),
+                NSSortDescriptor(keyPath: \ClipboardItem.timestamp, ascending: false)
+            ]
+        }
+        
+        do {
+            return try viewContext.fetch(request)
+        } catch {
+            print("❌ Failed to search items: \(error)")
+            return []
+        }
+    }
+    
+    func copyToClipboard(_ item: ClipboardItem) {
+        guard let content = item.content else { return }
+        
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        
+        // Set content based on type
+        switch ContentType(rawValue: item.contentType ?? "text") ?? .text {
+        case .text, .url:
+            pasteboard.setString(content, forType: .string)
+        case .image:
+            // For now, just copy the placeholder text
+            pasteboard.setString(content, forType: .string)
+        }
+        
+        print("📋 Copied to clipboard: \(content.prefix(50))...")
+    }
+    
+    // MARK: - App Statistics
+    
+    func getAppStatistics() -> [AppInfo] {
+        let request: NSFetchRequest<ClipboardItem> = ClipboardItem.fetchRequest()
+        request.predicate = NSPredicate(format: "isTransient == NO")
+        
+        do {
+            let items = try viewContext.fetch(request)
+            
+            // Group by bundle ID and count items
+            let groupedItems = Dictionary(grouping: items) { item in
+                item.sourceApp ?? "unknown"
+            }
+            
+            let appInfos = groupedItems.compactMap { (bundleID, items) -> AppInfo? in
+                guard let firstItem = items.first else { return nil }
+                
+                return AppInfo(
+                    bundleID: bundleID,
+                    name: firstItem.sourceAppName ?? "Unknown App",
+                    iconData: firstItem.sourceAppIcon,
+                    itemCount: items.count
+                )
+            }.sorted { $0.itemCount > $1.itemCount } // Sort by item count descending
+            
+            return appInfos
+        } catch {
+            print("Failed to fetch app statistics: \(error)")
+            return []
+        }
+    }
+    
+    func getTotalItemCount() -> Int {
+        let request: NSFetchRequest<ClipboardItem> = ClipboardItem.fetchRequest()
+        request.predicate = NSPredicate(format: "isTransient == NO")
+        
+        do {
+            return try viewContext.count(for: request)
+        } catch {
+            print("Failed to get total item count: \(error)")
+            return 0
+        }
     }
     
     // MARK: - Helper Methods
