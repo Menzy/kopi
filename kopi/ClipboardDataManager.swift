@@ -133,8 +133,7 @@ class ClipboardDataManager: ObservableObject {
         searchText: String? = nil,
         contentType: ContentType? = nil,
         sourceApp: String? = nil,
-        pinnedOnly: Bool = false,
-        sortOrder: SortOrder = .newestFirst
+        pinnedOnly: Bool = false
     ) -> [ClipboardItem] {
         let request: NSFetchRequest<ClipboardItem> = ClipboardItem.fetchRequest()
         
@@ -162,18 +161,8 @@ class ClipboardDataManager: ObservableObject {
         
         request.predicate = NSCompoundPredicate(andPredicateWithSubpredicates: predicates)
         
-        // Sort descriptors
-        switch sortOrder {
-        case .newestFirst:
-            request.sortDescriptors = [NSSortDescriptor(keyPath: \ClipboardItem.timestamp, ascending: false)]
-        case .oldestFirst:
-            request.sortDescriptors = [NSSortDescriptor(keyPath: \ClipboardItem.timestamp, ascending: true)]
-        case .byApp:
-            request.sortDescriptors = [
-                NSSortDescriptor(keyPath: \ClipboardItem.sourceAppName, ascending: true),
-                NSSortDescriptor(keyPath: \ClipboardItem.timestamp, ascending: false)
-            ]
-        }
+        // Always sort by newest first
+        request.sortDescriptors = [NSSortDescriptor(keyPath: \ClipboardItem.timestamp, ascending: false)]
         
         do {
             return try viewContext.fetch(request)

@@ -12,6 +12,7 @@ struct SidebarView: View {
     @Binding var selectedFilter: SidebarFilter
     let availableApps: [AppInfo]
     let totalItemCount: Int
+    let contentTypeCounts: [ContentType: Int]
     
     var body: some View {
         List(selection: $selectedFilter) {
@@ -25,6 +26,23 @@ struct SidebarView: View {
                     isSelected: selectedFilter == .all
                 )
                 .tag(SidebarFilter.all)
+            }
+            
+            // Types Section
+            Section("Types") {
+                ForEach(ContentType.allCases, id: \.self) { contentType in
+                    let count = contentTypeCounts[contentType] ?? 0
+                    if count > 0 {
+                        SidebarItemView(
+                            filter: .contentType(contentType),
+                            icon: contentType.systemImage,
+                            title: contentType.displayName,
+                            count: count,
+                            isSelected: selectedFilter == .contentType(contentType)
+                        )
+                        .tag(SidebarFilter.contentType(contentType))
+                    }
+                }
             }
             
             // Collections Section
@@ -116,12 +134,15 @@ struct SidebarItemView: View {
 
 enum SidebarFilter: Hashable, Equatable {
     case all
+    case contentType(ContentType)
     case app(String) // Bundle ID
     
     static func == (lhs: SidebarFilter, rhs: SidebarFilter) -> Bool {
         switch (lhs, rhs) {
         case (.all, .all):
             return true
+        case (.contentType(let lhsType), .contentType(let rhsType)):
+            return lhsType == rhsType
         case (.app(let lhsBundle), .app(let rhsBundle)):
             return lhsBundle == rhsBundle
         default:
@@ -133,6 +154,9 @@ enum SidebarFilter: Hashable, Equatable {
         switch self {
         case .all:
             hasher.combine("all")
+        case .contentType(let contentType):
+            hasher.combine("contentType")
+            hasher.combine(contentType)
         case .app(let bundleID):
             hasher.combine("app")
             hasher.combine(bundleID)

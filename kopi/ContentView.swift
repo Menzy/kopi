@@ -14,8 +14,6 @@ struct ContentView: View {
     
     @State private var selectedFilter: SidebarFilter = .all
     @State private var searchText = ""
-    @State private var contentTypeFilter: ContentType? = nil
-    @State private var sortOrder: SortOrder = .newestFirst
     @State private var showingQuickPaste = false
     @State private var previewItem: ClipboardItem?
     @State private var showingPreview = false
@@ -23,7 +21,8 @@ struct ContentView: View {
     @State private var clipboardItems: [ClipboardItem] = []
     @State private var availableApps: [AppInfo] = []
     @State private var totalItemCount: Int = 0
-    
+    @State private var contentTypeCounts: [ContentType: Int] = [:]
+
     var filteredItems: [ClipboardItem] {
         var items = clipboardItems
         
@@ -32,6 +31,8 @@ struct ContentView: View {
         case .all:
             // Show all items
             break
+        case .contentType(let contentType):
+            items = items.filter { $0.contentType == contentType.rawValue }
         case .app(let bundleID):
             items = items.filter { $0.sourceApp == bundleID }
         }
@@ -44,36 +45,20 @@ struct ContentView: View {
             }
         }
         
-        // Apply content type filter
-        if let contentTypeFilter = contentTypeFilter {
-            items = items.filter { $0.contentType == contentTypeFilter.rawValue }
-        }
-        
-        // Apply sorting
-        switch sortOrder {
-        case .newestFirst:
-            items.sort { ($0.timestamp ?? Date.distantPast) > ($1.timestamp ?? Date.distantPast) }
-        case .oldestFirst:
-            items.sort { ($0.timestamp ?? Date.distantPast) < ($1.timestamp ?? Date.distantPast) }
-        case .byApp:
-            items.sort { 
-                if $0.sourceAppName == $1.sourceAppName {
-                    return ($0.timestamp ?? Date.distantPast) > ($1.timestamp ?? Date.distantPast)
-                }
-                return ($0.sourceAppName ?? "") < ($1.sourceAppName ?? "")
-            }
-        }
+        // Sort by newest first (default behavior)
+        items.sort { ($0.timestamp ?? Date.distantPast) > ($1.timestamp ?? Date.distantPast) }
         
         return items
     }
-    
+
     var body: some View {
         NavigationSplitView {
             // Sidebar
             SidebarView(
                 selectedFilter: $selectedFilter,
                 availableApps: availableApps,
-                totalItemCount: totalItemCount
+                totalItemCount: totalItemCount,
+                contentTypeCounts: contentTypeCounts
             )
             .onAppear {
                 refreshData()
@@ -84,8 +69,6 @@ struct ContentView: View {
                 // Toolbar
                 ToolbarView(
                     searchText: $searchText,
-                    contentTypeFilter: $contentTypeFilter,
-                    sortOrder: $sortOrder,
                     onRefresh: refreshData
                 )
                 
@@ -152,6 +135,8 @@ struct ContentView: View {
         switch selectedFilter {
         case .all:
             return "All Clipboard Items"
+        case .contentType(let contentType):
+            return contentType.displayName
         case .app(let bundleID):
             let appName = availableApps.first(where: { $0.bundleID == bundleID })?.name ?? "Unknown App"
             return appName
@@ -172,6 +157,16 @@ struct ContentView: View {
             clipboardItems = dataManager.getRecentItems(limit: 500)
             availableApps = dataManager.getAppStatistics()
             totalItemCount = dataManager.getTotalItemCount()
+            
+            // Calculate content type counts
+            var typeCounts: [ContentType: Int] = [:]
+            for item in clipboardItems {
+                if let contentTypeString = item.contentType,
+                   let contentType = ContentType(rawValue: contentTypeString) {
+                    typeCounts[contentType, default: 0] += 1
+                }
+            }
+            contentTypeCounts = typeCounts
         }
     }
 }
@@ -180,8 +175,6 @@ struct ContentView: View {
 
 struct ToolbarView: View {
     @Binding var searchText: String
-    @Binding var contentTypeFilter: ContentType?
-    @Binding var sortOrder: SortOrder
     let onRefresh: () -> Void
     
     var body: some View {
@@ -216,67 +209,12 @@ struct ToolbarView: View {
             
             Spacer()
             
-            // Filter buttons
-            HStack(spacing: 8) {
-                // Content type filter
-                Menu {
-                    Button("All Types") {
-                        contentTypeFilter = nil
-                    }
-                    
-                    Divider()
-                    
-                    Button("Text") {
-                        contentTypeFilter = .text
-                    }
-                    
-                    Button("URLs") {
-                        contentTypeFilter = .url
-                    }
-                    
-                    Button("Images") {
-                        contentTypeFilter = .image
-                    }
-                } label: {
-                    HStack(spacing: 4) {
-                        Image(systemName: "line.3.horizontal.decrease.circle")
-                        Text(contentTypeFilter?.rawValue.capitalized ?? "All Types")
-                    }
-                    .font(.caption)
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-                
-                // Sort order
-                Menu {
-                    Button("Newest First") {
-                        sortOrder = .newestFirst
-                    }
-                    
-                    Button("Oldest First") {
-                        sortOrder = .oldestFirst
-                    }
-                    
-                    Button("By App") {
-                        sortOrder = .byApp
-                    }
-                } label: {
-                    HStack(spacing: 4) {
-                        Image(systemName: "arrow.up.arrow.down")
-                        Text(sortOrder.displayName)
-                    }
-                    .font(.caption)
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-                
-                // Refresh button
-                Button(action: onRefresh) {
-                    Image(systemName: "arrow.clockwise")
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
+            // Refresh button
+            Button(action: onRefresh) {
+                Image(systemName: "arrow.clockwise")
             }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
@@ -386,30 +324,6 @@ struct QuickPasteItemRow: View {
         }
         .onTapGesture {
             onSelect()
-        }
-    }
-}
-
-// MARK: - Sort Order
-
-enum SortOrder: String, CaseIterable {
-    case newestFirst = "newest"
-    case oldestFirst = "oldest"
-    case byApp = "app"
-    
-    var displayName: String {
-        switch self {
-        case .newestFirst: return "Newest First"
-        case .oldestFirst: return "Oldest First"
-        case .byApp: return "By App"
-        }
-    }
-    
-    var systemImage: String {
-        switch self {
-        case .newestFirst: return "arrow.down"
-        case .oldestFirst: return "arrow.up"
-        case .byApp: return "app.fill"
         }
     }
 }
