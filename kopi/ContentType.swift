@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import SwiftUI
 
 enum ContentType: String, CaseIterable {
     case text = "text"
@@ -31,6 +32,17 @@ enum ContentType: String, CaseIterable {
             return "link"
         case .image:
             return "photo"
+        }
+    }
+    
+    var color: Color {
+        switch self {
+        case .text:
+            return .blue
+        case .url:
+            return .green
+        case .image:
+            return .purple
         }
     }
 } 

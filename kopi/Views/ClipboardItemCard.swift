@@ -8,27 +8,216 @@
 import SwiftUI
 import AppKit
 
+
+
 struct ClipboardItemCard: View {
     let item: ClipboardItem
-    @State private var isHovered = false
-    @State private var showingFullContent = false
+    let isSelected: Bool
+    let cardSize: CGFloat
     let onCopy: () -> Void
     let onDelete: () -> Void
     let onPin: () -> Void
+    let onSelect: () -> Void
+    let onPreview: () -> Void
     
-    private var contentPreview: String {
-        let content = item.content ?? ""
-        if content.count > 150 {
-            return String(content.prefix(150)) + "..."
+    @State private var showingFullContent = false
+    @State private var showingContextMenu = false
+    
+    private let maxPreviewLength = 100 // Reduced for fixed size
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            // Header with app icon and timestamp
+            HStack {
+                // App icon only
+                if let iconData = item.sourceAppIcon,
+                   let nsImage = NSImage(data: iconData) {
+                    Image(nsImage: nsImage)
+                        .resizable()
+                        .frame(width: 24, height: 24)
+                        .clipShape(RoundedRectangle(cornerRadius: 5))
+                } else {
+                    Image(systemName: "app.fill")
+                        .foregroundColor(.secondary)
+                        .frame(width: 24, height: 24)
+                }
+                
+                Spacer()
+                
+                // Timestamp
+                if let timestamp = item.timestamp {
+                    Text(timeAgoString(from: timestamp))
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+            }
+            
+            // Content preview - optimized for square layout
+            VStack(alignment: .leading, spacing: 6) {
+                if let content = item.content {
+                    let contentType = ContentType(rawValue: item.contentType ?? "text") ?? .text
+                    
+                    switch contentType {
+                    case .text:
+                        let displayContent = String(content.prefix(maxPreviewLength))
+                        
+                        Text(displayContent)
+                            .font(.system(.caption, design: .default))
+                            .foregroundColor(.primary)
+                            .lineLimit(3)
+                            .textSelection(.enabled)
+                            .multilineTextAlignment(.leading)
+                        
+                    case .url:
+                        Text(content)
+                            .font(.system(.caption, design: .monospaced))
+                            .foregroundColor(.blue)
+                            .lineLimit(3)
+                            .textSelection(.enabled)
+                            .multilineTextAlignment(.leading)
+                        
+                    case .image:
+                        HStack {
+                            Image(systemName: "photo")
+                                .foregroundColor(.secondary)
+                                .font(.title3)
+                            Text("Image")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                            Spacer()
+                        }
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            
+            Spacer() // Push bottom content to bottom
+            
+            // Bottom info and settings
+            HStack {
+                // Content info (character count, URL, or dimensions)
+                if let content = item.content {
+                    let contentType = ContentType(rawValue: item.contentType ?? "text") ?? .text
+                    
+                    switch contentType {
+                    case .text:
+                        HStack(spacing: 4) {
+                            Image(systemName: "textformat")
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                            Text("\(content.count) characters")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                        
+                    case .url:
+                        HStack(spacing: 4) {
+                            Image(systemName: "link")
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                            Text(content)
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                        }
+                        
+                    case .image:
+                        HStack(spacing: 4) {
+                            Image(systemName: "photo")
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                            Text("1280 x 2856") // Placeholder - would need actual image dimensions
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                }
+                
+                Spacer()
+                
+                // Settings cog (only when selected)
+                if isSelected {
+                    Button(action: { showingContextMenu = true }) {
+                        Image(systemName: "gearshape.fill")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    .buttonStyle(PlainButtonStyle())
+                    .transition(.opacity.combined(with: .scale))
+                    .popover(isPresented: $showingContextMenu) {
+                        VStack(alignment: .leading, spacing: 0) {
+                            Button("Preview") {
+                                onPreview()
+                                showingContextMenu = false
+                            }
+                            .buttonStyle(PlainButtonStyle())
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 8)
+                            
+                            Button("Copy") {
+                                onCopy()
+                                showingContextMenu = false
+                            }
+                            .buttonStyle(PlainButtonStyle())
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 8)
+                            
+                            Button(item.isPinned ? "Unpin" : "Pin") {
+                                onPin()
+                                showingContextMenu = false
+                            }
+                            .buttonStyle(PlainButtonStyle())
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 8)
+                            
+                            Divider()
+                            
+                            Button("Delete") {
+                                onDelete()
+                                showingContextMenu = false
+                            }
+                            .buttonStyle(PlainButtonStyle())
+                            .foregroundColor(.red)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 8)
+                        }
+                        .frame(width: 120)
+                    }
+                }
+            }
         }
-        return content
+        .padding(12) // Reduced padding for fixed size
+        .frame(width: cardSize, height: cardSize) // Fixed square size
+        .background(
+            RoundedRectangle(cornerRadius: 12)
+                .fill(isSelected ? Color.accentColor.opacity(0.1) : Color(NSColor.controlBackgroundColor))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12)
+                        .stroke(
+                            isSelected ? Color.accentColor : Color.clear,
+                            lineWidth: isSelected ? 2 : 0
+                        )
+                )
+        )
+        .contentShape(Rectangle()) // Make entire card clickable
+        .onTapGesture {
+            onSelect()
+        }
+        .contextMenu {
+            Button("Preview", action: onPreview)
+            Button("Copy", action: onCopy)
+            Button(item.isPinned ? "Unpin" : "Pin", action: onPin)
+            Divider()
+            Button("Delete", action: onDelete)
+        }
+
+        .animation(.easeInOut(duration: 0.2), value: isSelected)
     }
     
-    private var timeAgo: String {
-        guard let timestamp = item.timestamp else { return "Unknown" }
-        
+    private func timeAgoString(from date: Date) -> String {
         let now = Date()
-        let timeInterval = now.timeIntervalSince(timestamp)
+        let timeInterval = now.timeIntervalSince(date)
         
         if timeInterval < 60 {
             return "Just now"
@@ -43,131 +232,6 @@ struct ClipboardItemCard: View {
             return "\(days)d ago"
         }
     }
-    
-    var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            // Header with app info and actions
-            HStack {
-                // App icon and info
-                HStack(spacing: 8) {
-                    if let iconData = item.sourceAppIcon,
-                       let nsImage = NSImage(data: iconData) {
-                        Image(nsImage: nsImage)
-                            .resizable()
-                            .frame(width: 20, height: 20)
-                            .clipShape(RoundedRectangle(cornerRadius: 4))
-                    } else {
-                        Image(systemName: "app.fill")
-                            .foregroundColor(.secondary)
-                            .frame(width: 20, height: 20)
-                    }
-                    
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text(item.sourceAppName ?? "Unknown App")
-                            .font(.caption)
-                            .fontWeight(.medium)
-                            .foregroundColor(.primary)
-                        
-                        Text(timeAgo)
-                            .font(.caption2)
-                            .foregroundColor(.secondary)
-                    }
-                }
-                
-                Spacer()
-                
-                // Content type badge
-                ContentTypeBadge(contentType: ContentType(rawValue: item.contentType ?? "text") ?? .text)
-                
-                // Pin indicator
-                if item.isPinned {
-                    Image(systemName: "pin.fill")
-                        .foregroundColor(.orange)
-                        .font(.caption)
-                }
-            }
-            .padding(.horizontal, 12)
-            .padding(.top, 10)
-            
-            // Content
-            VStack(alignment: .leading, spacing: 8) {
-                if let content = item.content {
-                    if item.contentType == "url" {
-                        URLContentView(url: content)
-                    } else if item.contentType == "image" {
-                        ImageContentView(placeholder: content)
-                    } else {
-                        TextContentView(text: showingFullContent ? content : contentPreview)
-                    }
-                }
-                
-                // Show more/less button for long content
-                if (item.content?.count ?? 0) > 150 {
-                    Button(action: { showingFullContent.toggle() }) {
-                        Text(showingFullContent ? "Show less" : "Show more")
-                            .font(.caption)
-                            .foregroundColor(.accentColor)
-                    }
-                    .buttonStyle(PlainButtonStyle())
-                }
-            }
-            .padding(.horizontal, 12)
-            .padding(.bottom, 10)
-            
-            // Action buttons (shown on hover)
-            if isHovered {
-                HStack(spacing: 8) {
-                    Button(action: onCopy) {
-                        Label("Copy", systemImage: "doc.on.doc")
-                            .font(.caption)
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-                    
-                    Button(action: onPin) {
-                        Label(item.isPinned ? "Unpin" : "Pin", systemImage: item.isPinned ? "pin.slash" : "pin")
-                            .font(.caption)
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-                    
-                    Spacer()
-                    
-                    Button(action: onDelete) {
-                        Label("Delete", systemImage: "trash")
-                            .font(.caption)
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-                    .foregroundColor(.red)
-                }
-                .padding(.horizontal, 12)
-                .padding(.bottom, 10)
-                .transition(.opacity.combined(with: .move(edge: .bottom)))
-            }
-        }
-        .background(
-            RoundedRectangle(cornerRadius: 8)
-                .fill(Color(NSColor.controlBackgroundColor))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 8)
-                        .stroke(Color(NSColor.separatorColor), lineWidth: 0.5)
-                )
-        )
-        .scaleEffect(isHovered ? 1.02 : 1.0)
-        .shadow(color: .black.opacity(isHovered ? 0.1 : 0.05), radius: isHovered ? 8 : 4)
-        .onHover { hovering in
-            withAnimation(.easeInOut(duration: 0.2)) {
-                isHovered = hovering
-            }
-        }
-        .contextMenu {
-            Button("Copy to Clipboard") { onCopy() }
-            Button(item.isPinned ? "Unpin" : "Pin") { onPin() }
-            Divider()
-            Button("Delete") { onDelete() }
-        }
-    }
 }
 
 // MARK: - Content Type Badge
@@ -176,94 +240,17 @@ struct ContentTypeBadge: View {
     let contentType: ContentType
     
     var body: some View {
-        HStack(spacing: 4) {
-            Image(systemName: contentType.systemImage)
-                .font(.caption2)
-            Text(contentType.displayName)
-                .font(.caption2)
-        }
-        .padding(.horizontal, 6)
-        .padding(.vertical, 2)
-        .background(
-            RoundedRectangle(cornerRadius: 4)
-                .fill(badgeColor.opacity(0.2))
-        )
-        .foregroundColor(badgeColor)
-    }
-    
-    private var badgeColor: Color {
-        switch contentType {
-        case .text:
-            return .blue
-        case .url:
-            return .green
-        case .image:
-            return .purple
-        }
+        Text(contentType.displayName)
+            .font(.caption2)
+            .fontWeight(.medium)
+            .foregroundColor(contentType.color)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2)
+            .background(
+                RoundedRectangle(cornerRadius: 4)
+                    .fill(contentType.color.opacity(0.15))
+            )
     }
 }
 
-// MARK: - Content Views
-
-struct TextContentView: View {
-    let text: String
-    
-    var body: some View {
-        Text(text)
-            .font(.body)
-            .lineLimit(nil)
-            .textSelection(.enabled)
-            .padding(.vertical, 4)
-    }
-}
-
-struct URLContentView: View {
-    let url: String
-    
-    var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(url)
-                .font(.body)
-                .foregroundColor(.accentColor)
-                .textSelection(.enabled)
-            
-            if let nsUrl = URL(string: url) {
-                HStack {
-                    Image(systemName: "link")
-                        .font(.caption2)
-                    Text(nsUrl.host ?? "Unknown host")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-            }
-        }
-        .padding(.vertical, 4)
-        .onTapGesture {
-            if let nsUrl = URL(string: url) {
-                NSWorkspace.shared.open(nsUrl)
-            }
-        }
-    }
-}
-
-struct ImageContentView: View {
-    let placeholder: String
-    
-    var body: some View {
-        HStack {
-            Image(systemName: "photo")
-                .font(.title2)
-                .foregroundColor(.secondary)
-            
-            VStack(alignment: .leading) {
-                Text("Image")
-                    .font(.body)
-                    .fontWeight(.medium)
-                Text(placeholder)
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-            }
-        }
-        .padding(.vertical, 8)
-    }
-} 
+ 

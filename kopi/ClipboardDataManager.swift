@@ -90,6 +90,13 @@ class ClipboardDataManager: ObservableObject {
         saveContext()
     }
     
+    func updateClipboardItem(_ item: ClipboardItem, content: String) {
+        item.content = content
+        item.contentPreview = createPreview(from: content, type: ContentType(rawValue: item.contentType ?? "text") ?? .text)
+        item.fileSize = Int64(content.data(using: .utf8)?.count ?? 0)
+        saveContext()
+    }
+    
     // MARK: - Enhanced Query Methods
     
     func getRecentItems(limit: Int = 50) -> [ClipboardItem] {
