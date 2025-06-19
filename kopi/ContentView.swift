@@ -7,10 +7,12 @@
 
 import SwiftUI
 import CoreData
+import Combine
 
 struct ContentView: View {
     @StateObject private var dataManager = ClipboardDataManager.shared
     @StateObject private var keyboardShortcutManager = KeyboardShortcutManager.shared
+    @EnvironmentObject private var clipboardMonitor: ClipboardMonitor
     
     @State private var selectedFilter: SidebarFilter = .all
     @State private var searchText = ""
@@ -88,6 +90,10 @@ struct ContentView: View {
                         dataManager.togglePin(for: item)
                         refreshData()
                     },
+                    onBatchDelete: { items in
+                        dataManager.deleteClipboardItems(items)
+                        refreshData()
+                    },
                     previewItem: $previewItem,
                     showingPreview: $showingPreview
                 )
@@ -100,6 +106,18 @@ struct ContentView: View {
             refreshData()
         }
         .onChange(of: selectedFilter) {
+            refreshData()
+        }
+        .onChange(of: clipboardMonitor.clipboardDidChange) {
+            // Auto-refresh when clipboard changes
+            refreshData()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            // Refresh when app becomes active
+            refreshData()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { _ in
+            // Refresh when window gains focus
             refreshData()
         }
         .sheet(isPresented: $showingQuickPaste) {

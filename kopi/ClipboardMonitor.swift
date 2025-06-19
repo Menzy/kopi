@@ -22,6 +22,7 @@ class ClipboardMonitor: ObservableObject {
     
     @Published var isMonitoring: Bool = false
     @Published var lastClipboardContent: String = ""
+    @Published var clipboardDidChange: Bool = false
     
     private let dataManager = ClipboardDataManager.shared
     private let sourceAppDetector = SourceAppDetector.shared
@@ -39,8 +40,8 @@ class ClipboardMonitor: ObservableObject {
         isMonitoring = true
         lastChangeCount = pasteboard.changeCount
         
-        // Start timer-based monitoring (polling every 0.5 seconds)
-        monitoringTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
+        // Start timer-based monitoring (polling every 0.1 seconds for faster response)
+        monitoringTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
             self?.checkClipboardChanges()
         }
     }
@@ -95,8 +96,9 @@ class ClipboardMonitor: ObservableObject {
             sourceAppIcon: sourceAppInfo.iconData
         )
         
-        // Update published property
+        // Update published properties
         lastClipboardContent = clipboardContent.content
+        clipboardDidChange.toggle() // Trigger UI refresh
     }
     
     private func checkClipboardContent() -> ClipboardContent? {

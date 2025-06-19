@@ -228,19 +228,16 @@ struct ClipboardItemCard: View {
         .frame(width: cardSize, height: cardSize) // Fixed square size
         .background(
             RoundedRectangle(cornerRadius: 12)
-                .fill(isSelected ? Color.accentColor.opacity(0.1) : Color(NSColor.controlBackgroundColor))
+                .fill(isSelected ? Color.accentColor.opacity(0.15) : Color(NSColor.controlBackgroundColor))
                 .overlay(
                     RoundedRectangle(cornerRadius: 12)
                         .stroke(
-                            isSelected ? Color.accentColor : Color.clear,
-                            lineWidth: isSelected ? 2 : 0
+                            isSelected ? Color.accentColor : Color(NSColor.separatorColor).opacity(0.3),
+                            lineWidth: isSelected ? 3 : 1
                         )
                 )
         )
         .contentShape(Rectangle()) // Make entire card clickable
-        .onTapGesture {
-            onSelect()
-        }
         .contextMenu {
             Button("Preview", action: onPreview)
             Button("Copy", action: onCopy)

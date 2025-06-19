@@ -45,8 +45,8 @@ struct SidebarView: View {
                 }
             }
             
-            // Collections Section
-            Section("Collections") {
+            // Apps Section
+            Section("Apps") {
                 ForEach(availableApps, id: \.bundleID) { app in
                     SidebarItemView(
                         filter: .app(app.bundleID),

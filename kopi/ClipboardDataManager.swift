@@ -80,6 +80,13 @@ class ClipboardDataManager: ObservableObject {
         saveContext()
     }
     
+    func deleteClipboardItems(_ items: [ClipboardItem]) {
+        for item in items {
+            viewContext.delete(item)
+        }
+        saveContext()
+    }
+    
     func togglePin(for item: ClipboardItem) {
         item.isPinned.toggle()
         saveContext()
@@ -218,7 +225,7 @@ class ClipboardDataManager: ObservableObject {
                     iconData: firstItem.sourceAppIcon,
                     itemCount: items.count
                 )
-            }.sorted { $0.itemCount > $1.itemCount } // Sort by item count descending
+            }.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending } // Sort alphabetically by name
             
             return appInfos
         } catch {
