@@ -11,6 +11,7 @@ import CoreData
 struct ContentView: View {
     @Environment(\.managedObjectContext) private var viewContext
     @StateObject private var dataManager = ClipboardDataManager.shared
+    @EnvironmentObject private var clipboardMonitor: ClipboardMonitor
 
     @FetchRequest(
         sortDescriptors: [NSSortDescriptor(keyPath: \ClipboardItem.timestamp, ascending: false)],
@@ -32,19 +33,36 @@ struct ContentView: View {
                     }
                 }
             }
-            .navigationTitle("Clipboard History")
+                        .navigationTitle("Clipboard History")
             .toolbar {
                 ToolbarItemGroup(placement: .primaryAction) {
+                    Button(action: toggleMonitoring) {
+                        Label(
+                            clipboardMonitor.isMonitoring ? "Stop Monitoring" : "Start Monitoring",
+                            systemImage: clipboardMonitor.isMonitoring ? "pause.circle" : "play.circle"
+                        )
+                    }
+                    .foregroundColor(clipboardMonitor.isMonitoring ? .red : .green)
+                    
                     Button(action: addTestItem) {
                         Label("Add Test Item", systemImage: "plus")
                     }
-                    
-
                     
                     Button(action: clearAll) {
                         Label("Clear All", systemImage: "trash")
                     }
                     .disabled(clipboardItems.isEmpty)
+                }
+                
+                ToolbarItemGroup(placement: .status) {
+                    HStack {
+                        Circle()
+                            .fill(clipboardMonitor.isMonitoring ? .green : .gray)
+                            .frame(width: 8, height: 8)
+                        Text(clipboardMonitor.isMonitoring ? "Monitoring" : "Stopped")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
                 }
             }
         }
@@ -68,7 +86,7 @@ struct ContentView: View {
         }
     }
     
-    private func clearAll() {
+        private func clearAll() {
         withAnimation {
             clipboardItems.forEach { item in
                 dataManager.deleteClipboardItem(item)
@@ -76,7 +94,13 @@ struct ContentView: View {
         }
     }
     
-
+    private func toggleMonitoring() {
+        if clipboardMonitor.isMonitoring {
+            clipboardMonitor.stopMonitoring()
+        } else {
+            clipboardMonitor.startMonitoring()
+        }
+    }
 }
 
 struct ClipboardItemRow: View {
@@ -113,8 +137,17 @@ struct ClipboardItemRow: View {
                 
                 if let sourceAppName = item.sourceAppName {
                     HStack {
-                        Image(systemName: "app")
-                            .font(.caption2)
+                        // Show app icon if available, otherwise use system icon
+                        if let iconData = item.sourceAppIcon,
+                           let nsImage = NSImage(data: iconData) {
+                            Image(nsImage: nsImage)
+                                .resizable()
+                                .frame(width: 12, height: 12)
+                        } else {
+                            Image(systemName: "app")
+                                .font(.caption2)
+                        }
+                        
                         Text(sourceAppName)
                             .font(.caption2)
                         Spacer()
