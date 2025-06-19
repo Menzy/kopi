@@ -16,7 +16,7 @@ struct ClipboardItemCard: View {
     let cardSize: CGFloat
     let onCopy: () -> Void
     let onDelete: () -> Void
-    let onPin: () -> Void
+
     let onSelect: () -> Void
     let onPreview: () -> Void
     
@@ -200,13 +200,7 @@ struct ClipboardItemCard: View {
                             .padding(.horizontal, 12)
                             .padding(.vertical, 8)
                             
-                            Button(item.isPinned ? "Unpin" : "Pin") {
-                                onPin()
-                                showingContextMenu = false
-                            }
-                            .buttonStyle(PlainButtonStyle())
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 8)
+
                             
                             Divider()
                             
@@ -228,12 +222,12 @@ struct ClipboardItemCard: View {
         .frame(width: cardSize, height: cardSize) // Fixed square size
         .background(
             RoundedRectangle(cornerRadius: 12)
-                .fill(isSelected ? Color.accentColor.opacity(0.15) : Color(NSColor.controlBackgroundColor))
+                .fill(Color(NSColor.controlBackgroundColor))
                 .overlay(
                     RoundedRectangle(cornerRadius: 12)
                         .stroke(
                             isSelected ? Color.accentColor : Color(NSColor.separatorColor).opacity(0.3),
-                            lineWidth: isSelected ? 3 : 1
+                            lineWidth: isSelected ? 1.5 : 1
                         )
                 )
         )
@@ -241,7 +235,7 @@ struct ClipboardItemCard: View {
         .contextMenu {
             Button("Preview", action: onPreview)
             Button("Copy", action: onCopy)
-            Button(item.isPinned ? "Unpin" : "Pin", action: onPin)
+
             Divider()
             Button("Delete", action: onDelete)
         }

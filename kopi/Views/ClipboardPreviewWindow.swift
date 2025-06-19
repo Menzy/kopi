@@ -244,11 +244,7 @@ struct ClipboardPreviewWindow: View {
         isPresented = false
     }
     
-    private func togglePin() {
-        // This would need to be connected to the data manager
-        // For now, just close the preview
-        isPresented = false
-    }
+
     
     private func startEditing() {
         editedContent = item.content ?? ""

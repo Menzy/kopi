@@ -86,10 +86,7 @@ struct ContentView: View {
                         dataManager.deleteClipboardItem(item)
                         refreshData()
                     },
-                    onPin: { item in
-                        dataManager.togglePin(for: item)
-                        refreshData()
-                    },
+
                     onBatchDelete: { items in
                         dataManager.deleteClipboardItems(items)
                         refreshData()

@@ -30,7 +30,7 @@ struct PersistenceController {
             item.contentPreview = content.count > 50 ? String(content.prefix(50)) + "..." : content
             item.timestamp = Date().addingTimeInterval(-Double.random(in: 0...3600))
             item.deviceOrigin = "macOS"
-            item.isPinned = false
+
             item.isTransient = false
             item.isSensitive = false
             item.fileSize = Int64(content.data(using: .utf8)?.count ?? 0)

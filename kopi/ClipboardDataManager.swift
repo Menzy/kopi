@@ -41,7 +41,7 @@ class ClipboardDataManager: ObservableObject {
         item.sourceAppName = sourceAppName
         item.sourceAppIcon = sourceAppIcon
         item.fileSize = Int64(content.data(using: .utf8)?.count ?? 0)
-        item.isPinned = false
+
         item.isTransient = false
         item.isSensitive = false
         
@@ -87,10 +87,7 @@ class ClipboardDataManager: ObservableObject {
         saveContext()
     }
     
-    func togglePin(for item: ClipboardItem) {
-        item.isPinned.toggle()
-        saveContext()
-    }
+
     
     func markAsSensitive(_ item: ClipboardItem) {
         item.isSensitive = true
@@ -140,7 +137,7 @@ class ClipboardDataManager: ObservableObject {
         searchText: String? = nil,
         contentType: ContentType? = nil,
         sourceApp: String? = nil,
-        pinnedOnly: Bool = false
+
     ) -> [ClipboardItem] {
         let request: NSFetchRequest<ClipboardItem> = ClipboardItem.fetchRequest()
         
@@ -161,10 +158,7 @@ class ClipboardDataManager: ObservableObject {
             predicates.append(NSPredicate(format: "sourceAppName == %@", sourceApp))
         }
         
-        // Pinned only
-        if pinnedOnly {
-            predicates.append(NSPredicate(format: "isPinned == YES"))
-        }
+
         
         request.predicate = NSCompoundPredicate(andPredicateWithSubpredicates: predicates)
         

@@ -11,7 +11,7 @@ struct ClipboardGridView: View {
     let items: [ClipboardItem]
     let onCopy: (ClipboardItem) -> Void
     let onDelete: (ClipboardItem) -> Void
-    let onPin: (ClipboardItem) -> Void
+
     let onBatchDelete: ([ClipboardItem]) -> Void
     
     @State private var selectedItems: Set<NSManagedObjectID> = []
@@ -45,7 +45,7 @@ struct ClipboardGridView: View {
                                 cardSize: cardSize,
                                 onCopy: { onCopy(item) },
                                 onDelete: { onDelete(item) },
-                                onPin: { onPin(item) },
+    
                                 onSelect: { handleItemSelection(item) },
                                 onPreview: { 
                                     previewItem = item
