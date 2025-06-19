@@ -8,6 +8,9 @@
 import Foundation
 import AppKit
 import Combine
+import Cocoa
+import CoreData
+import UniformTypeIdentifiers
 
 class ClipboardMonitor: ObservableObject {
     static let shared = ClipboardMonitor()
@@ -33,7 +36,6 @@ class ClipboardMonitor: ObservableObject {
     func startMonitoring() {
         guard !isMonitoring else { return }
         
-        print("🔍 Starting clipboard monitoring...")
         isMonitoring = true
         lastChangeCount = pasteboard.changeCount
         
@@ -41,20 +43,15 @@ class ClipboardMonitor: ObservableObject {
         monitoringTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
             self?.checkClipboardChanges()
         }
-        
-        print("✅ Clipboard monitoring started")
     }
     
     func stopMonitoring() {
         guard isMonitoring else { return }
         
-        print("⏹️ Stopping clipboard monitoring...")
         isMonitoring = false
         
         monitoringTimer?.invalidate()
         monitoringTimer = nil
-        
-        print("✅ Clipboard monitoring stopped")
     }
     
     // MARK: - Private Methods
@@ -71,8 +68,7 @@ class ClipboardMonitor: ObservableObject {
     
     private func handleClipboardChange() {
         // Get clipboard content
-        guard let clipboardContent = getClipboardContent() else {
-            print("⚠️ No valid clipboard content found")
+        guard let clipboardContent = checkClipboardContent() else {
             return
         }
         
@@ -82,11 +78,11 @@ class ClipboardMonitor: ObservableObject {
         // Check for privacy restrictions
         let privacyCheck = privacyFilter.shouldExcludeContent(
             clipboardContent.content,
+            contentType: clipboardContent.type,
             sourceApp: sourceAppInfo.bundleID
         )
         
         if privacyCheck.shouldExclude {
-            print("🔒 Clipboard content excluded: \(privacyCheck.reason ?? "Privacy filter")")
             return
         }
         
@@ -101,45 +97,103 @@ class ClipboardMonitor: ObservableObject {
         
         // Update published property
         lastClipboardContent = clipboardContent.content
-        
-        print("📋 Clipboard content saved: \(clipboardContent.content.prefix(50))...")
     }
     
-    private func getClipboardContent() -> ClipboardContent? {
-        // Check for different content types in order of preference
+    private func checkClipboardContent() -> ClipboardContent? {
+        let pasteboard = NSPasteboard.general
         
-        // 1. Check for URLs first
-        if let url = pasteboard.string(forType: .URL) ?? pasteboard.string(forType: .fileURL) {
-            return ClipboardContent(content: url, type: .url)
-        }
+        // 1. First priority: Get original image data in native format
+        let imageTypes = [
+            NSPasteboard.PasteboardType.png,
+            NSPasteboard.PasteboardType("public.jpeg"),
+            NSPasteboard.PasteboardType("public.jpg"), 
+            NSPasteboard.PasteboardType("public.heic"),
+            NSPasteboard.PasteboardType("public.heif"),
+            NSPasteboard.PasteboardType("public.gif"),
+            NSPasteboard.PasteboardType("public.bmp"),
+            NSPasteboard.PasteboardType("public.webp"),
+            NSPasteboard.PasteboardType("public.svg-image")
+        ]
         
-        // 2. Check for regular text
-        if let string = pasteboard.string(forType: .string) {
-            // Determine if it's a URL or regular text
-            if isValidURL(string) {
-                return ClipboardContent(content: string, type: .url)
-            } else {
-                return ClipboardContent(content: string, type: .text)
+        // Try to get original image data first
+        for imageType in imageTypes {
+            if let imageData = pasteboard.data(forType: imageType) {
+                // Verify it's valid image data
+                if let _ = NSImage(data: imageData) {
+                    let base64String = imageData.base64EncodedString()
+                    return ClipboardContent(content: base64String, type: .image)
+                }
             }
         }
         
-        // 3. Check for images (basic support)
-        if let imageData = pasteboard.data(forType: .png) ?? pasteboard.data(forType: .jpeg) {
-            // For now, we'll store a placeholder for images
-            // In a future phase, we can add proper image handling
-            let imagePlaceholder = "[Image: \(imageData.count) bytes]"
-            return ClipboardContent(content: imagePlaceholder, type: .image)
+        // 2. Check for file URLs that might be images
+        if let fileURL = pasteboard.string(forType: .fileURL) {
+            if let url = URL(string: fileURL) {
+                // Check if it's an image file and try to read it directly
+                if isImageFile(fileURL) || hasImageUTI(url) {
+                    do {
+                        // Read the actual image file from disk
+                        let imageData = try Data(contentsOf: url)
+                        
+                        // Verify it's actually image data by trying to create NSImage
+                        if let _ = NSImage(data: imageData) {
+                            let base64String = imageData.base64EncodedString()
+                            return ClipboardContent(content: base64String, type: .image)
+                        }
+                    } catch {
+                        // Failed to read image file, continue to other content types
+                    }
+                }
+            }
+        }
+        
+        // 3. Check for TIFF data (fallback for other image sources)
+        if let tiffData = pasteboard.data(forType: .tiff) {
+            // Only accept larger TIFF files to avoid file icons
+            if tiffData.count > 100000, let _ = NSImage(data: tiffData) {
+                let base64String = tiffData.base64EncodedString()
+                return ClipboardContent(content: base64String, type: .image)
+            }
+        }
+        
+        // 4. Check for URLs
+        if let urlString = pasteboard.string(forType: .URL) ?? pasteboard.string(forType: .string) {
+            if isValidURL(urlString) {
+                return ClipboardContent(content: urlString, type: .url)
+            }
+        }
+        
+        // 5. Check for text
+        if let text = pasteboard.string(forType: .string) {
+            if isValidURL(text) {
+                return ClipboardContent(content: text, type: .url)
+            } else {
+                return ClipboardContent(content: text, type: .text)
+            }
         }
         
         return nil
     }
     
+    // MARK: - Helper Methods
+    
     private func isValidURL(_ string: String) -> Bool {
         guard let url = URL(string: string) else { return false }
-        return url.scheme != nil && (url.scheme == "http" || url.scheme == "https" || url.scheme == "file")
+        return url.scheme != nil && (url.scheme == "http" || url.scheme == "https")
     }
     
-
+    private func isImageFile(_ path: String) -> Bool {
+        let imageExtensions = ["png", "jpg", "jpeg", "gif", "bmp", "tiff", "heic", "heif", "webp", "svg"]
+        let pathExtension = URL(fileURLWithPath: path).pathExtension.lowercased()
+        return imageExtensions.contains(pathExtension)
+    }
+    
+    private func hasImageUTI(_ url: URL) -> Bool {
+        guard let uti = try? url.resourceValues(forKeys: [.typeIdentifierKey]).typeIdentifier else {
+            return false
+        }
+        return UTType(uti)?.conforms(to: .image) == true
+    }
     
     private func saveClipboardItem(content: String, type: ContentType, sourceApp: String?, sourceAppName: String?, sourceAppIcon: Data?) {
         _ = dataManager.createClipboardItem(

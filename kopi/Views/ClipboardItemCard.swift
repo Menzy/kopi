@@ -77,14 +77,36 @@ struct ClipboardItemCard: View {
                             .multilineTextAlignment(.leading)
                         
                     case .image:
-                        HStack {
-                            Image(systemName: "photo")
-                                .foregroundColor(.secondary)
-                                .font(.title3)
-                            Text("Image")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                            Spacer()
+                        // Show image thumbnail if possible
+                        if let imageData = Data(base64Encoded: content) {
+                            if let nsImage = NSImage(data: imageData) {
+                                Image(nsImage: nsImage)
+                                    .resizable()
+                                    .aspectRatio(contentMode: .fill)
+                                    .frame(width: 120, height: 80)
+                                    .clipped()
+                                    .cornerRadius(6)
+                            } else {
+                                HStack {
+                                    Image(systemName: "photo.badge.exclamationmark")
+                                        .foregroundColor(.red)
+                                        .font(.title3)
+                                    Text("Image Error")
+                                        .font(.caption)
+                                        .foregroundColor(.red)
+                                    Spacer()
+                                }
+                            }
+                        } else {
+                            HStack {
+                                Image(systemName: "photo")
+                                    .foregroundColor(.secondary)
+                                    .font(.title3)
+                                Text("Image")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                                Spacer()
+                            }
                         }
                     }
                 }
@@ -127,9 +149,24 @@ struct ClipboardItemCard: View {
                             Image(systemName: "photo")
                                 .font(.caption2)
                                 .foregroundColor(.secondary)
-                            Text("1280 x 2856") // Placeholder - would need actual image dimensions
-                                .font(.caption)
-                                .foregroundColor(.secondary)
+                            
+                            // Show actual image dimensions if possible
+                            if let imageData = Data(base64Encoded: content) {
+                                if let nsImage = NSImage(data: imageData) {
+                                    let size = nsImage.size
+                                    Text("\(Int(size.width)) × \(Int(size.height))")
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                } else {
+                                    Text("Image Error")
+                                        .font(.caption)
+                                        .foregroundColor(.red)
+                                }
+                            } else {
+                                Text("Image")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
                         }
                     }
                 }

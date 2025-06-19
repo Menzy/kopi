@@ -50,7 +50,6 @@ class KeyboardShortcutManager: ObservableObject {
         )
         
         guard status == noErr else {
-            print("❌ Failed to install event handler: \(status)")
             return
         }
         
@@ -67,9 +66,9 @@ class KeyboardShortcutManager: ObservableObject {
         )
         
         if registerStatus == noErr {
-            print("✅ Global keyboard shortcut registered: \(currentShortcut.displayString)")
+            // Shortcut registered successfully
         } else {
-            print("❌ Failed to register global shortcut: \(registerStatus)")
+            // Failed to register shortcut - could log this to a proper logging system
         }
     }
     
@@ -91,8 +90,6 @@ class KeyboardShortcutManager: ObservableObject {
     }
     
     private func handleHotKeyEvent(event: EventRef) {
-        print("🔥 Global shortcut pressed!")
-        
         DispatchQueue.main.async {
             self.onShortcutPressed?()
         }
@@ -216,8 +213,6 @@ class QuickPasteManager: ObservableObject {
             let pasteboard = NSPasteboard.general
             pasteboard.clearContents()
             pasteboard.setString(content, forType: .string)
-            
-            print("📋 Quick pasted: \(content.prefix(50))...")
         }
         
         hideQuickPaste()

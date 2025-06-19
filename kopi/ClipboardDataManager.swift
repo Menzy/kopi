@@ -183,8 +183,13 @@ class ClipboardDataManager: ObservableObject {
         case .text, .url:
             pasteboard.setString(content, forType: .string)
         case .image:
-            // For now, just copy the placeholder text
-            pasteboard.setString(content, forType: .string)
+            // Handle base64 encoded image data
+            if let imageData = Data(base64Encoded: content) {
+                pasteboard.setData(imageData, forType: .tiff)
+            } else {
+                // Fallback to string if not base64
+                pasteboard.setString(content, forType: .string)
+            }
         }
         
         print("📋 Copied to clipboard: \(content.prefix(50))...")

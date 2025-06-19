@@ -15,7 +15,7 @@ class PrivacyFilter {
     
     // MARK: - Main Filtering Method
     
-    func shouldExcludeContent(_ content: String, sourceApp: String? = nil) -> (shouldExclude: Bool, reason: String?) {
+    func shouldExcludeContent(_ content: String, contentType: ContentType = .text, sourceApp: String? = nil) -> (shouldExclude: Bool, reason: String?) {
         // Check NSPasteboard privacy markers first
         if let reason = checkPasteboardPrivacyMarkers() {
             return (true, reason)
@@ -26,7 +26,13 @@ class PrivacyFilter {
             return (true, reason)
         }
         
-        // Check content patterns
+        // Skip content pattern checks for images since they're base64-encoded binary data
+        // Pattern matching on base64 data can produce false positives
+        if contentType == .image {
+            return (false, nil)
+        }
+        
+        // Check content patterns (only for text and URLs)
         if let reason = checkContentPatterns(content) {
             return (true, reason)
         }

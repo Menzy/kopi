@@ -30,13 +30,11 @@ struct kopiApp: App {
     }
     
     private func setupApp() {
-        // Start clipboard monitoring
+        // Start monitoring
         clipboardMonitor.startMonitoring()
         
         // Register global keyboard shortcuts
         keyboardManager.registerGlobalShortcut()
-        
-        print("✅ Kopi app initialized successfully")
     }
     
     private func teardownApp() {
@@ -45,7 +43,5 @@ struct kopiApp: App {
         
         // Unregister shortcuts
         keyboardManager.unregisterGlobalShortcut()
-        
-        print("👋 Kopi app shut down")
     }
 }
