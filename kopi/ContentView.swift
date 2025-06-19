@@ -17,8 +17,6 @@ struct ContentView: View {
     @State private var selectedFilter: SidebarFilter = .all
     @State private var searchText = ""
     @State private var showingQuickPaste = false
-    @State private var previewItem: ClipboardItem?
-    @State private var showingPreview = false
     
     @State private var clipboardItems: [ClipboardItem] = []
     @State private var availableApps: [AppInfo] = []
@@ -86,13 +84,14 @@ struct ContentView: View {
                         dataManager.deleteClipboardItem(item)
                         refreshData()
                     },
-
                     onBatchDelete: { items in
                         dataManager.deleteClipboardItems(items)
                         refreshData()
                     },
-                    previewItem: $previewItem,
-                    showingPreview: $showingPreview
+                    onSave: { item, newContent in
+                        dataManager.updateClipboardItem(item, content: newContent)
+                        refreshData()
+                    }
                 )
             }
             .navigationTitle(titleForCurrentFilter)
@@ -122,30 +121,6 @@ struct ContentView: View {
         .sheet(isPresented: $showingQuickPaste) {
             QuickPasteView()
         }
-        .overlay(
-            // Preview overlay - covers entire app window
-            Group {
-                if showingPreview, let item = previewItem {
-                    Color.black.opacity(0.3)
-                        .ignoresSafeArea()
-                        .onTapGesture {
-                            showingPreview = false
-                        }
-                        .overlay(
-                            ClipboardPreviewWindow(
-                                item: item, 
-                                isPresented: $showingPreview,
-                                onSave: { item, newContent in
-                                    dataManager.updateClipboardItem(item, content: newContent)
-                                    refreshData()
-                                }
-                            )
-                        )
-                        .transition(.opacity)
-                        .animation(.easeInOut(duration: 0.2), value: showingPreview)
-                }
-            }
-        )
     }
     
     private var titleForCurrentFilter: String {

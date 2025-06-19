@@ -16,9 +16,10 @@ struct ClipboardItemCard: View {
     let cardSize: CGFloat
     let onCopy: () -> Void
     let onDelete: () -> Void
-
     let onSelect: () -> Void
     let onPreview: () -> Void
+    let onSave: (ClipboardItem, String) -> Void
+    @Binding var showingPreview: Bool
     
     @State private var showingFullContent = false
     @State private var showingContextMenu = false
@@ -69,12 +70,58 @@ struct ClipboardItemCard: View {
                             .multilineTextAlignment(.leading)
                         
                     case .url:
-                        Text(content)
-                            .font(.system(.caption, design: .monospaced))
-                            .foregroundColor(.blue)
-                            .lineLimit(3)
-                            .textSelection(.enabled)
-                            .multilineTextAlignment(.leading)
+                        VStack(alignment: .leading, spacing: 4) {
+                            // URL text preview
+                            Text(content)
+                                .font(.system(.caption, design: .monospaced))
+                                .foregroundColor(.blue)
+                                .lineLimit(2)
+                                .textSelection(.enabled)
+                                .multilineTextAlignment(.leading)
+                            
+                            // Web preview thumbnail
+                            if let url = URL(string: content) {
+                                WebView(url: url)
+                                    .frame(width: 120, height: 80)
+                                    .clipped()
+                                    .cornerRadius(6)
+                                    .overlay(
+                                        // Loading overlay
+                                        RoundedRectangle(cornerRadius: 6)
+                                            .fill(Color.black.opacity(0.1))
+                                            .overlay(
+                                                HStack(spacing: 4) {
+                                                    Image(systemName: "globe")
+                                                        .font(.caption2)
+                                                        .foregroundColor(.white)
+                                                    Text("WEB")
+                                                        .font(.caption2)
+                                                        .fontWeight(.medium)
+                                                        .foregroundColor(.white)
+                                                }
+                                                .padding(4)
+                                                .background(Color.black.opacity(0.6))
+                                                .cornerRadius(4),
+                                                alignment: .bottomTrailing
+                                            )
+                                    )
+                            } else {
+                                // Invalid URL fallback
+                                RoundedRectangle(cornerRadius: 6)
+                                    .fill(Color(NSColor.controlBackgroundColor))
+                                    .frame(width: 120, height: 80)
+                                    .overlay(
+                                        VStack(spacing: 4) {
+                                            Image(systemName: "link.badge.plus")
+                                                .foregroundColor(.secondary)
+                                                .font(.title3)
+                                            Text("URL")
+                                                .font(.caption2)
+                                                .foregroundColor(.secondary)
+                                        }
+                                    )
+                            }
+                        }
                         
                     case .image:
                         // Show image thumbnail if possible
@@ -185,7 +232,7 @@ struct ClipboardItemCard: View {
                     .popover(isPresented: $showingContextMenu) {
                         VStack(alignment: .leading, spacing: 0) {
                             Button("Preview") {
-                                onPreview()
+                                showingPreview = true
                                 showingContextMenu = false
                             }
                             .buttonStyle(PlainButtonStyle())
@@ -215,6 +262,13 @@ struct ClipboardItemCard: View {
                         }
                         .frame(width: 120)
                     }
+                    .popover(isPresented: $showingPreview, arrowEdge: .top) {
+                        ClipboardPreviewPopover(
+                            item: item,
+                            isPresented: $showingPreview,
+                            onSave: onSave
+                        )
+                    }
                 }
             }
         }
@@ -233,7 +287,7 @@ struct ClipboardItemCard: View {
         )
         .contentShape(Rectangle()) // Make entire card clickable
         .contextMenu {
-            Button("Preview", action: onPreview)
+            Button("Preview") { showingPreview = true }
             Button("Copy", action: onCopy)
 
             Divider()

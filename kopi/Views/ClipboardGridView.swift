@@ -11,13 +11,12 @@ struct ClipboardGridView: View {
     let items: [ClipboardItem]
     let onCopy: (ClipboardItem) -> Void
     let onDelete: (ClipboardItem) -> Void
-
     let onBatchDelete: ([ClipboardItem]) -> Void
+    let onSave: (ClipboardItem, String) -> Void
     
     @State private var selectedItems: Set<NSManagedObjectID> = []
     @State private var lastSelectedItem: ClipboardItem?
-    @Binding var previewItem: ClipboardItem?
-    @Binding var showingPreview: Bool
+    @State private var previewingItem: NSManagedObjectID?
     @FocusState private var isFocused: Bool
     
     // Drag selection support
@@ -45,12 +44,21 @@ struct ClipboardGridView: View {
                                 cardSize: cardSize,
                                 onCopy: { onCopy(item) },
                                 onDelete: { onDelete(item) },
-    
                                 onSelect: { handleItemSelection(item) },
                                 onPreview: { 
-                                    previewItem = item
-                                    showingPreview = true
-                                }
+                                    previewingItem = item.objectID
+                                },
+                                onSave: onSave,
+                                showingPreview: Binding(
+                                    get: { previewingItem == item.objectID },
+                                    set: { isShowing in
+                                        if isShowing {
+                                            previewingItem = item.objectID
+                                        } else if previewingItem == item.objectID {
+                                            previewingItem = nil
+                                        }
+                                    }
+                                )
                             )
                             .onTapGesture {
                                 handleItemTap(item)
@@ -225,8 +233,7 @@ struct ClipboardGridView: View {
         case .space:
             if let firstSelected = selectedItems.first,
                let item = items.first(where: { $0.objectID == firstSelected }) {
-                previewItem = item
-                showingPreview = true
+                previewingItem = item.objectID
                 return .handled
             }
             return .ignored

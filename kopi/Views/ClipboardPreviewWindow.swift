@@ -9,16 +9,15 @@ import SwiftUI
 import AppKit
 import WebKit
 
-struct ClipboardPreviewWindow: View {
+struct ClipboardPreviewPopover: View {
     let item: ClipboardItem
     @Binding var isPresented: Bool
     let onSave: (ClipboardItem, String) -> Void
-    @FocusState private var isFocused: Bool
     @State private var isEditing = false
     @State private var editedContent = ""
     
     var body: some View {
-        VStack(spacing: 0) {
+        VStack(alignment: .leading, spacing: 12) {
             // Header with title and edit button
             HStack {
                 Text(previewTitle)
@@ -37,38 +36,34 @@ struct ClipboardPreviewWindow: View {
                         }
                     }) {
                         Text(isEditing ? "Save" : "Edit")
-                            .font(.system(.body, weight: .medium))
+                            .font(.system(.caption, weight: .medium))
                             .foregroundColor(.accentColor)
                     }
                     .buttonStyle(PlainButtonStyle())
                 }
             }
-            .padding(.horizontal, 20)
-            .padding(.vertical, 16)
-            .background(Color(NSColor.controlBackgroundColor))
             
             Divider()
             
-            // Content preview
+            // Content preview (larger version)
             contentPreview
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(Color(NSColor.textBackgroundColor))
+                .frame(maxHeight: 400) // Increased from 200 to 400
             
             Divider()
             
-            // Footer with source app info only
+            // Footer with source app and copy button
             HStack {
                 // Source app info
-                HStack(spacing: 8) {
+                HStack(spacing: 6) {
                     if let iconData = item.sourceAppIcon,
                        let nsImage = NSImage(data: iconData) {
                         Image(nsImage: nsImage)
                             .resizable()
-                            .frame(width: 20, height: 20)
-                            .clipShape(RoundedRectangle(cornerRadius: 4))
+                            .frame(width: 16, height: 16)
+                            .clipShape(RoundedRectangle(cornerRadius: 3))
                     }
                     
-                    Text("From \(item.sourceAppName ?? "Unknown App")")
+                    Text("From \(item.sourceAppName ?? "Unknown")")
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }
@@ -82,31 +77,10 @@ struct ClipboardPreviewWindow: View {
                 .buttonStyle(.bordered)
                 .controlSize(.small)
             }
-            .padding(.horizontal, 20)
-            .padding(.vertical, 12)
-            .background(Color(NSColor.controlBackgroundColor))
         }
-        .frame(width: 800, height: 600) // Larger size for better web/image viewing
+        .padding(16) // Increased from 12 to 16
+        .frame(width: 480) // Increased from 320 to 480
         .background(Color(NSColor.windowBackgroundColor))
-        .cornerRadius(12)
-        .shadow(color: .black.opacity(0.3), radius: 20, x: 0, y: 10)
-        .focusable()
-        .focused($isFocused)
-        .focusEffectDisabled()
-        .onAppear {
-            isFocused = true
-        }
-        .onKeyPress { keyPress in
-            if keyPress.key == .escape {
-                isPresented = false
-                return .handled
-            } else if keyPress.key == .space && !isEditing {
-                // Only close on space if not in editing mode
-                isPresented = false
-                return .handled
-            }
-            return .ignored
-        }
         .onAppear {
             editedContent = item.content ?? ""
         }
@@ -116,11 +90,11 @@ struct ClipboardPreviewWindow: View {
         let contentType = ContentType(rawValue: item.contentType ?? "text") ?? .text
         switch contentType {
         case .text:
-            return "Text"
+            return "Text Preview"
         case .url:
-            return "Web Preview"
+            return "URL Preview"
         case .image:
-            return "Image"
+            return "Image Preview"
         }
     }
     
@@ -136,90 +110,115 @@ struct ClipboardPreviewWindow: View {
                         TextEditor(text: $editedContent)
                             .font(.system(.body, design: .default))
                             .scrollContentBackground(.hidden)
-                            .frame(minHeight: 400)
+                            .frame(minHeight: 200, maxHeight: 350)
                     } else {
                         Text(content)
                             .font(.system(.body, design: .default))
                             .foregroundColor(.primary)
                             .textSelection(.enabled)
                             .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(20)
+                            .padding(12)
+                            .background(Color(NSColor.textBackgroundColor))
+                            .cornerRadius(8)
                     }
                 }
                 
             case .url:
-                VStack(spacing: 0) {
+                VStack(alignment: .leading, spacing: 8) {
                     // URL display at top
-                    HStack {
-                        Text(content)
-                            .font(.system(.caption, design: .monospaced))
-                            .foregroundColor(.blue)
-                            .textSelection(.enabled)
-                            .lineLimit(2)
-                        Spacer()
-                    }
-                    .padding(.horizontal, 20)
-                    .padding(.vertical, 10)
-                    .background(Color(NSColor.controlBackgroundColor).opacity(0.5))
+                    Text(content)
+                        .font(.system(.caption, design: .monospaced))
+                        .foregroundColor(.blue)
+                        .textSelection(.enabled)
+                        .lineLimit(2)
+                        .padding(8)
+                        .background(Color(NSColor.controlBackgroundColor).opacity(0.5))
+                        .cornerRadius(6)
                     
-                    // Web view
-                    WebView(url: URL(string: content))
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    // Web view preview
+                    if let url = URL(string: content) {
+                        WebView(url: url)
+                            .frame(height: 300)
+                            .cornerRadius(8)
+                    } else {
+                        HStack {
+                            Image(systemName: "exclamationmark.triangle")
+                                .foregroundColor(.orange)
+                            Text("Invalid URL format")
+                                .font(.caption)
+                                .foregroundColor(.orange)
+                            Spacer()
+                        }
+                        .padding(8)
+                        .background(Color(NSColor.controlBackgroundColor).opacity(0.5))
+                        .cornerRadius(6)
+                    }
                 }
                 
             case .image:
-                ScrollView([.horizontal, .vertical]) {
+                VStack(alignment: .leading, spacing: 8) {
                     if let imageData = Data(base64Encoded: content) {
                         if let nsImage = NSImage(data: imageData) {
                             Image(nsImage: nsImage)
                                 .resizable()
                                 .aspectRatio(contentMode: .fit)
-                                .frame(maxWidth: 760, maxHeight: 500) // Leave some padding
-                                .padding(20)
+                                .frame(maxWidth: 440, maxHeight: 300)
+                                .cornerRadius(8)
                         } else {
-                            VStack(spacing: 16) {
+                            HStack {
                                 Image(systemName: "photo.badge.exclamationmark")
-                                    .font(.system(size: 48))
-                                    .foregroundColor(.secondary)
-                                Text("Unable to create image from data")
-                                    .font(.headline)
-                                    .foregroundColor(.secondary)
-                                Text("NSImage failed to initialize from the decoded data.")
-                                    .font(.body)
-                                    .foregroundColor(.secondary)
-                                    .multilineTextAlignment(.center)
+                                    .foregroundColor(.red)
+                                Text("Unable to load image")
+                                    .font(.caption)
+                                    .foregroundColor(.red)
+                                Spacer()
                             }
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                            .padding(40)
+                            .padding(8)
+                            .background(Color(NSColor.controlBackgroundColor).opacity(0.5))
+                            .cornerRadius(6)
                         }
                     } else {
-                        VStack(spacing: 16) {
+                        HStack {
                             Image(systemName: "photo.badge.exclamationmark")
-                                .font(.system(size: 48))
-                                .foregroundColor(.secondary)
-                            Text("Unable to load image")
-                                .font(.headline)
-                                .foregroundColor(.secondary)
-                            Text("The image data may be corrupted or in an unsupported format.")
-                                .font(.body)
-                                .foregroundColor(.secondary)
-                                .multilineTextAlignment(.center)
+                                .foregroundColor(.red)
+                            Text("Invalid image data")
+                                .font(.caption)
+                                .foregroundColor(.red)
+                            Spacer()
                         }
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .padding(40)
+                        .padding(8)
+                        .background(Color(NSColor.controlBackgroundColor).opacity(0.5))
+                        .cornerRadius(6)
+                    }
+                    
+                    // Image info
+                    if let imageData = Data(base64Encoded: content) {
+                        if let nsImage = NSImage(data: imageData) {
+                            let size = nsImage.size
+                            HStack {
+                                Image(systemName: "info.circle")
+                                    .foregroundColor(.secondary)
+                                Text("\(Int(size.width)) × \(Int(size.height)) pixels")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                                Spacer()
+                            }
+                        }
                     }
                 }
             }
         } else {
-            VStack(spacing: 16) {
+            HStack {
                 Image(systemName: "doc.badge.exclamationmark")
-                    .font(.system(size: 48))
                     .foregroundColor(.secondary)
                 Text("No content available")
-                    .font(.headline)
+                    .font(.caption)
                     .foregroundColor(.secondary)
+                Spacer()
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .padding(8)
+            .background(Color(NSColor.controlBackgroundColor).opacity(0.5))
+            .cornerRadius(6)
         }
     }
     
@@ -244,8 +243,6 @@ struct ClipboardPreviewWindow: View {
         isPresented = false
     }
     
-
-    
     private func startEditing() {
         editedContent = item.content ?? ""
         isEditing = true
@@ -256,15 +253,26 @@ struct ClipboardPreviewWindow: View {
         onSave(item, editedContent)
         isEditing = false
     }
+}
+
+// MARK: - Legacy ClipboardPreviewWindow (kept for compatibility)
+
+struct ClipboardPreviewWindow: View {
+    let item: ClipboardItem
+    @Binding var isPresented: Bool
+    let onSave: (ClipboardItem, String) -> Void
     
-    private func timeAgoString(from date: Date) -> String {
-        let formatter = RelativeDateTimeFormatter()
-        formatter.unitsStyle = .abbreviated
-        return formatter.localizedString(for: date, relativeTo: Date())
+    var body: some View {
+        // Redirect to the new popover design
+        ClipboardPreviewPopover(
+            item: item,
+            isPresented: $isPresented,
+            onSave: onSave
+        )
     }
 }
 
-// MARK: - WebView Component
+// MARK: - WebView Component (kept for future use)
 
 struct WebView: NSViewRepresentable {
     let url: URL?
