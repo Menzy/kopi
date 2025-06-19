@@ -17,6 +17,7 @@ class ClipboardMonitor: ObservableObject {
     
     private let pasteboard = NSPasteboard.general
     private var lastChangeCount: Int = 0
+    private var lastContentHash: Int = 0
     private var monitoringTimer: Timer?
     private var cancellables = Set<AnyCancellable>()
     
@@ -39,9 +40,25 @@ class ClipboardMonitor: ObservableObject {
         
         isMonitoring = true
         lastChangeCount = pasteboard.changeCount
+        lastContentHash = getClipboardContentHash()
         
-        // Start timer-based monitoring (polling every 0.1 seconds for faster response)
-        monitoringTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
+        // Start high-frequency timer-based monitoring (polling every 0.05 seconds for ultra-fast response)
+        monitoringTimer = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { [weak self] _ in
+            self?.checkClipboardChanges()
+        }
+        
+        // Set timer to high priority for better responsiveness
+        if let timer = monitoringTimer {
+            RunLoop.current.add(timer, forMode: .common)
+        }
+        
+        // Also listen for app activation events to check immediately when switching apps
+        NotificationCenter.default.addObserver(
+            forName: NSApplication.didBecomeActiveNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            // Immediate check when app becomes active
             self?.checkClipboardChanges()
         }
     }
@@ -53,6 +70,14 @@ class ClipboardMonitor: ObservableObject {
         
         monitoringTimer?.invalidate()
         monitoringTimer = nil
+        
+        // Remove notification observers
+        NotificationCenter.default.removeObserver(self, name: NSApplication.didBecomeActiveNotification, object: nil)
+    }
+    
+    func forceCheck() {
+        // Manual method to force an immediate clipboard check
+        checkClipboardChanges()
     }
     
     // MARK: - Private Methods
@@ -60,45 +85,80 @@ class ClipboardMonitor: ObservableObject {
     private func checkClipboardChanges() {
         let currentChangeCount = pasteboard.changeCount
         
-        // Check if clipboard content has changed
+        // Quick exit if change count hasn't changed
         guard currentChangeCount != lastChangeCount else { return }
         
+        // Get content hash for additional validation
+        let currentContentHash = getClipboardContentHash()
+        
+        // Double-check to avoid processing the same content multiple times
+        guard currentContentHash != lastContentHash else {
+            lastChangeCount = currentChangeCount
+            return
+        }
+        
         lastChangeCount = currentChangeCount
+        lastContentHash = currentContentHash
         handleClipboardChange()
     }
     
+    private func getClipboardContentHash() -> Int {
+        // Quick hash of clipboard content to detect actual changes
+        var hasher = Hasher()
+        
+        // Hash the most common types quickly
+        if let string = pasteboard.string(forType: .string) {
+            hasher.combine(string)
+        }
+        if let url = pasteboard.string(forType: .URL) {
+            hasher.combine(url)
+        }
+        if let data = pasteboard.data(forType: .png) {
+            hasher.combine(data.count) // Use data size for images to avoid processing large data
+        }
+        
+        return hasher.finalize()
+    }
+    
     private func handleClipboardChange() {
-        // Get clipboard content
-        guard let clipboardContent = checkClipboardContent() else {
-            return
+        // Process clipboard changes on a background queue to avoid blocking the timer
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            guard let self = self else { return }
+            
+            // Get clipboard content
+            guard let clipboardContent = self.checkClipboardContent() else {
+                return
+            }
+            
+            // Detect source application first
+            let sourceAppInfo = self.sourceAppDetector.detectCurrentApp()
+            
+            // Check for privacy restrictions
+            let privacyCheck = self.privacyFilter.shouldExcludeContent(
+                clipboardContent.content,
+                contentType: clipboardContent.type,
+                sourceApp: sourceAppInfo.bundleID
+            )
+            
+            if privacyCheck.shouldExclude {
+                return
+            }
+            
+            // Save to data store
+            self.saveClipboardItem(
+                content: clipboardContent.content,
+                type: clipboardContent.type,
+                sourceApp: sourceAppInfo.bundleID,
+                sourceAppName: sourceAppInfo.name,
+                sourceAppIcon: sourceAppInfo.iconData
+            )
+            
+            // Update published properties on main queue
+            DispatchQueue.main.async {
+                self.lastClipboardContent = clipboardContent.content
+                self.clipboardDidChange.toggle() // Trigger UI refresh
+            }
         }
-        
-        // Detect source application first
-        let sourceAppInfo = sourceAppDetector.detectCurrentApp()
-        
-        // Check for privacy restrictions
-        let privacyCheck = privacyFilter.shouldExcludeContent(
-            clipboardContent.content,
-            contentType: clipboardContent.type,
-            sourceApp: sourceAppInfo.bundleID
-        )
-        
-        if privacyCheck.shouldExclude {
-            return
-        }
-        
-        // Save to data store
-        saveClipboardItem(
-            content: clipboardContent.content,
-            type: clipboardContent.type,
-            sourceApp: sourceAppInfo.bundleID,
-            sourceAppName: sourceAppInfo.name,
-            sourceAppIcon: sourceAppInfo.iconData
-        )
-        
-        // Update published properties
-        lastClipboardContent = clipboardContent.content
-        clipboardDidChange.toggle() // Trigger UI refresh
     }
     
     private func checkClipboardContent() -> ClipboardContent? {

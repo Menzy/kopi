@@ -113,11 +113,13 @@ struct ContentView: View {
             refreshData()
         }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
-            // Refresh when app becomes active
+            // Force immediate clipboard check and refresh when app becomes active
+            clipboardMonitor.forceCheck()
             refreshData()
         }
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { _ in
-            // Refresh when window gains focus
+            // Force immediate clipboard check and refresh when window gains focus
+            clipboardMonitor.forceCheck()
             refreshData()
         }
         .sheet(isPresented: $showingQuickPaste) {
