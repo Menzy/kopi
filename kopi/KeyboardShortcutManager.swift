@@ -209,6 +209,9 @@ class QuickPasteManager: ObservableObject {
         let item = quickPasteItems[index]
         
         if let content = item.content {
+            // Notify clipboard monitor before copying to avoid loop
+            ClipboardMonitor.shared.notifyAppCopiedToClipboard(content: content)
+            
             // Copy to pasteboard
             let pasteboard = NSPasteboard.general
             pasteboard.clearContents()

@@ -229,6 +229,9 @@ struct ClipboardPreviewPopover: View {
         if let content = item.content {
             let contentType = ContentType(rawValue: item.contentType ?? "text") ?? .text
             
+            // Notify clipboard monitor before copying to avoid loop
+            ClipboardMonitor.shared.notifyAppCopiedToClipboard(content: content)
+            
             switch contentType {
             case .text, .url:
                 pasteboard.setString(content, forType: .string)

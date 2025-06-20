@@ -21,6 +21,10 @@ class ClipboardMonitor: ObservableObject {
     private var monitoringTimer: Timer?
     private var cancellables = Set<AnyCancellable>()
     
+    // Track clipboard changes made by this app to avoid loops
+    private var lastAppCopyContent: String?
+    private var lastAppCopyTime: Date?
+    
     @Published var isMonitoring: Bool = false
     @Published var lastClipboardContent: String = ""
     @Published var clipboardDidChange: Bool = false
@@ -127,6 +131,12 @@ class ClipboardMonitor: ObservableObject {
             
             // Get clipboard content
             guard let clipboardContent = self.checkClipboardContent() else {
+                return
+            }
+            
+            // Skip if this change was made by our app
+            if self.shouldIgnoreClipboardChange(content: clipboardContent.content) {
+                print("Ignoring clipboard change made by this app: \(clipboardContent.content.prefix(30))")
                 return
             }
             
@@ -265,6 +275,29 @@ class ClipboardMonitor: ObservableObject {
             sourceAppName: sourceAppName,
             sourceAppIcon: sourceAppIcon
         )
+    }
+    
+    // MARK: - App Copy Tracking
+    
+    // Call this method when the app copies something to the clipboard
+    // This helps avoid detecting our own clipboard changes
+    func notifyAppCopiedToClipboard(content: String) {
+        lastAppCopyContent = content
+        lastAppCopyTime = Date()
+        print("App copied to clipboard: \(content.prefix(30))")
+    }
+    
+    // Check if a clipboard change should be ignored (was made by this app)
+    private func shouldIgnoreClipboardChange(content: String) -> Bool {
+        // If we recently copied this exact content, ignore it
+        if let lastContent = lastAppCopyContent,
+           let lastTime = lastAppCopyTime,
+           lastContent == content,
+           Date().timeIntervalSince(lastTime) < 5.0 { // 5 second window
+            return true
+        }
+        
+        return false
     }
 }
 

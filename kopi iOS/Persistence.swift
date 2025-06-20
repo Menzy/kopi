@@ -79,5 +79,15 @@ struct PersistenceController {
         } catch {
             print("Failed to pin viewContext to the current generation: \(error)")
         }
+        
+        // Add CloudKit sync monitoring
+        NotificationCenter.default.addObserver(
+            forName: .NSPersistentStoreRemoteChange,
+            object: container.persistentStoreCoordinator,
+            queue: .main
+        ) { notification in
+            print("📡 [iOS] CloudKit remote change notification received")
+            print("   Notification: \(notification.userInfo ?? [:])")
+        }
     }
 }

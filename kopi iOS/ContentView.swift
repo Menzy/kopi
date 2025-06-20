@@ -93,6 +93,10 @@ struct ClipboardHistoryView: View {
 
     private func copyToPasteboard(item: ClipboardItem) {
         guard let content = item.content else { return }
+        
+        // Notify clipboard service before copying to avoid loop
+        clipboardService.notifyAppCopiedToClipboard(content: content)
+        
         UIPasteboard.general.string = content
         
         // Show brief feedback
@@ -102,32 +106,49 @@ struct ClipboardHistoryView: View {
 
     private func deleteItems(offsets: IndexSet) {
         withAnimation {
-            offsets.map { filteredItems[$0] }.forEach(viewContext.delete)
+            let itemsToDelete = offsets.map { filteredItems[$0] }
+            print("🗑️ [iOS] Deleting \(itemsToDelete.count) clipboard items")
+            
+            for item in itemsToDelete {
+                let itemId = item.id?.uuidString ?? "unknown"
+                let content = item.content?.prefix(50) ?? "no content"
+                print("   - Deleting: \(itemId) - \(content)")
+            }
+            
+            itemsToDelete.forEach(viewContext.delete)
 
             do {
                 try viewContext.save()
+                print("✅ [iOS] Deletion saved to CloudKit for \(itemsToDelete.count) items")
             } catch {
                 let nsError = error as NSError
-                print("Delete error: \(nsError), \(nsError.userInfo)")
+                print("❌ [iOS] Delete error: \(nsError), \(nsError.userInfo)")
             }
         }
     }
     
     private func clearAllItems() {
         withAnimation {
+            let itemCount = filteredItems.count
+            print("🗑️ [iOS] Clearing all \(itemCount) clipboard items")
+            
             filteredItems.forEach(viewContext.delete)
             
             do {
                 try viewContext.save()
+                print("✅ [iOS] Clear all saved to CloudKit for \(itemCount) items")
             } catch {
                 let nsError = error as NSError
-                print("Clear error: \(nsError), \(nsError.userInfo)")
+                print("❌ [iOS] Clear error: \(nsError), \(nsError.userInfo)")
             }
         }
     }
     
     private func addTestItem() {
         let testContent = "Test clipboard item from iOS - \(Date().formatted(date: .abbreviated, time: .shortened))"
+        
+        // Notify clipboard service before copying to avoid loop
+        clipboardService.notifyAppCopiedToClipboard(content: testContent)
         
         UIPasteboard.general.string = testContent
         

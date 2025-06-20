@@ -45,7 +45,12 @@ class ClipboardDataManager: ObservableObject {
         item.isTransient = false
         item.isSensitive = false
         
+        let itemId = item.id?.uuidString ?? "unknown"
+        print("➕ [macOS] Creating clipboard item: \(itemId) - \(content.prefix(50))")
+        
         saveContext()
+        
+        print("✅ [macOS] Item saved to CloudKit: \(itemId)")
         return item
     }
     
@@ -76,15 +81,28 @@ class ClipboardDataManager: ObservableObject {
     }
     
     func deleteClipboardItem(_ item: ClipboardItem) {
+        let itemId = item.id?.uuidString ?? "unknown"
+        let content = item.content?.prefix(50) ?? "no content"
+        print("🗑️ [macOS] Deleting clipboard item: \(itemId) - \(content)")
+        
         viewContext.delete(item)
         saveContext()
+        
+        print("✅ [macOS] Deletion saved to CloudKit for item: \(itemId)")
     }
     
     func deleteClipboardItems(_ items: [ClipboardItem]) {
+        print("🗑️ [macOS] Batch deleting \(items.count) clipboard items")
+        
         for item in items {
+            let itemId = item.id?.uuidString ?? "unknown"
+            let content = item.content?.prefix(30) ?? "no content"
+            print("   - Deleting: \(itemId) - \(content)")
             viewContext.delete(item)
         }
         saveContext()
+        
+        print("✅ [macOS] Batch deletion saved to CloudKit for \(items.count) items")
     }
     
 
@@ -175,6 +193,9 @@ class ClipboardDataManager: ObservableObject {
     
     func copyToClipboard(_ item: ClipboardItem) {
         guard let content = item.content else { return }
+        
+        // Notify clipboard monitor before copying to avoid loop
+        ClipboardMonitor.shared.notifyAppCopiedToClipboard(content: content)
         
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()

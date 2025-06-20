@@ -14,6 +14,11 @@ class ClipboardService: ObservableObject {
     private var lastChangeCount: Int = 0
     private var timer: Timer?
     
+    // Track clipboard changes made by this app to avoid loops
+    private var ignoreNextClipboardChange = false
+    private var lastAppCopyContent: String?
+    private var lastAppCopyTime: Date?
+    
     init() {
         lastChangeCount = UIPasteboard.general.changeCount
         
@@ -38,6 +43,12 @@ class ClipboardService: ObservableObject {
         guard let content = UIPasteboard.general.string,
               !content.isEmpty else { return }
         
+        // Skip if this change was made by our app
+        if shouldIgnoreClipboardChange(content: content) {
+            print("Ignoring clipboard change made by this app: \(content.prefix(30))")
+            return
+        }
+        
         // Check if we already have this exact content from recently
         let context = persistenceController.container.viewContext
         let request: NSFetchRequest<ClipboardItem> = ClipboardItem.fetchRequest()
@@ -52,6 +63,7 @@ class ClipboardService: ObservableObject {
             if let existing = existingItems.first,
                let timestamp = existing.timestamp,
                Date().timeIntervalSince(timestamp) < 30 {
+                print("Skipping duplicate content from \(Date().timeIntervalSince(timestamp)) seconds ago")
                 return
             }
         } catch {
@@ -60,6 +72,27 @@ class ClipboardService: ObservableObject {
         
         // Save new clipboard item
         saveClipboardItem(content: content)
+    }
+    
+    // Call this method when the app copies something to the clipboard
+    // This helps avoid detecting our own clipboard changes
+    func notifyAppCopiedToClipboard(content: String) {
+        lastAppCopyContent = content
+        lastAppCopyTime = Date()
+        print("App copied to clipboard: \(content.prefix(30))")
+    }
+    
+    // Check if a clipboard change should be ignored (was made by this app)
+    private func shouldIgnoreClipboardChange(content: String) -> Bool {
+        // If we recently copied this exact content, ignore it
+        if let lastContent = lastAppCopyContent,
+           let lastTime = lastAppCopyTime,
+           lastContent == content,
+           Date().timeIntervalSince(lastTime) < 5.0 { // 5 second window
+            return true
+        }
+        
+        return false
     }
     
     private func saveClipboardItem(content: String) {
@@ -87,11 +120,14 @@ class ClipboardService: ObservableObject {
         item.sourceApp = Bundle.main.bundleIdentifier
         item.sourceAppName = "iOS App"
         
+        let itemId = item.id?.uuidString ?? "unknown"
+        print("➕ [iOS] Creating clipboard item: \(itemId) - \(content.prefix(50))")
+        
         do {
             try context.save()
-            print("Saved clipboard item: \(content.prefix(50))")
+            print("✅ [iOS] Item saved to CloudKit: \(itemId)")
         } catch {
-            print("Error saving clipboard item: \(error)")
+            print("❌ [iOS] Error saving clipboard item: \(error)")
         }
     }
 }
