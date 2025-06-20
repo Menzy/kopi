@@ -7,18 +7,54 @@
 	objects = {
 
 /* Begin PBXFileReference section */
+		B57D245E2E04EBCD003D33CD /* kopi ios.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "kopi ios.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		B5A939B22E04214100DD73A5 /* kopi.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = kopi.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		B57D246F2E04EBD0003D33CD /* Exceptions for "kopi ios" folder in "kopi ios" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = B57D245D2E04EBCD003D33CD /* kopi ios */;
+		};
+		B5FDAEF62E04F19E00AE0264 /* Exceptions for "kopi" folder in "kopi ios" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				kopi.xcdatamodeld,
+			);
+			target = B57D245D2E04EBCD003D33CD /* kopi ios */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
 /* Begin PBXFileSystemSynchronizedRootGroup section */
+		B57D245F2E04EBCD003D33CD /* kopi ios */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				B57D246F2E04EBD0003D33CD /* Exceptions for "kopi ios" folder in "kopi ios" target */,
+			);
+			path = "kopi ios";
+			sourceTree = "<group>";
+		};
 		B5A939B42E04214100DD73A5 /* kopi */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				B5FDAEF62E04F19E00AE0264 /* Exceptions for "kopi" folder in "kopi ios" target */,
+			);
 			path = kopi;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
+		B57D245B2E04EBCD003D33CD /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		B5A939AF2E04214100DD73A5 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
@@ -33,6 +69,7 @@
 			isa = PBXGroup;
 			children = (
 				B5A939B42E04214100DD73A5 /* kopi */,
+				B57D245F2E04EBCD003D33CD /* kopi ios */,
 				B5A939B32E04214100DD73A5 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -41,6 +78,7 @@
 			isa = PBXGroup;
 			children = (
 				B5A939B22E04214100DD73A5 /* kopi.app */,
+				B57D245E2E04EBCD003D33CD /* kopi ios.app */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -48,6 +86,28 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
+		B57D245D2E04EBCD003D33CD /* kopi ios */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = B57D24702E04EBD0003D33CD /* Build configuration list for PBXNativeTarget "kopi ios" */;
+			buildPhases = (
+				B57D245A2E04EBCD003D33CD /* Sources */,
+				B57D245B2E04EBCD003D33CD /* Frameworks */,
+				B57D245C2E04EBCD003D33CD /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				B57D245F2E04EBCD003D33CD /* kopi ios */,
+			);
+			name = "kopi ios";
+			packageProductDependencies = (
+			);
+			productName = "kopi ios";
+			productReference = B57D245E2E04EBCD003D33CD /* kopi ios.app */;
+			productType = "com.apple.product-type.application";
+		};
 		B5A939B12E04214100DD73A5 /* kopi */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = B5A939C32E04214300DD73A5 /* Build configuration list for PBXNativeTarget "kopi" */;
@@ -80,6 +140,9 @@
 				LastSwiftUpdateCheck = 1640;
 				LastUpgradeCheck = 1640;
 				TargetAttributes = {
+					B57D245D2E04EBCD003D33CD = {
+						CreatedOnToolsVersion = 16.4;
+					};
 					B5A939B12E04214100DD73A5 = {
 						CreatedOnToolsVersion = 16.4;
 					};
@@ -100,11 +163,19 @@
 			projectRoot = "";
 			targets = (
 				B5A939B12E04214100DD73A5 /* kopi */,
+				B57D245D2E04EBCD003D33CD /* kopi ios */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
+		B57D245C2E04EBCD003D33CD /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		B5A939B02E04214100DD73A5 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -115,6 +186,13 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
+		B57D245A2E04EBCD003D33CD /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		B5A939AE2E04214100DD73A5 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -125,6 +203,71 @@
 /* End PBXSourcesBuildPhase section */
 
 /* Begin XCBuildConfiguration section */
+		B57D246D2E04EBD0003D33CD /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = "kopi ios/kopi_ios.entitlements";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = QA3SD355GU;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "kopi ios/Info.plist";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				IPHONEOS_DEPLOYMENT_TARGET = 16.6;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "com.wanmenzy.kopi-ios";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		B57D246E2E04EBD0003D33CD /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = "kopi ios/kopi_ios.entitlements";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = QA3SD355GU;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "kopi ios/Info.plist";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				IPHONEOS_DEPLOYMENT_TARGET = 16.6;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "com.wanmenzy.kopi-ios";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
 		B5A939C12E04214300DD73A5 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -263,6 +406,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
+				MACOSX_DEPLOYMENT_TARGET = 14.6;
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.wanmenzy.kopi;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -290,6 +434,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
+				MACOSX_DEPLOYMENT_TARGET = 14.6;
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.wanmenzy.kopi;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -302,6 +447,15 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
+		B57D24702E04EBD0003D33CD /* Build configuration list for PBXNativeTarget "kopi ios" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				B57D246D2E04EBD0003D33CD /* Debug */,
+				B57D246E2E04EBD0003D33CD /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 		B5A939AD2E04214100DD73A5 /* Build configuration list for PBXProject "kopi" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
