@@ -49,39 +49,26 @@ struct ClipboardHistoryView: View {
 
     var body: some View {
         NavigationView {
-            VStack {
-                // Search bar
-                SearchBar(text: $searchText)
-                    .padding(.horizontal)
-                
+            VStack(spacing: 0) {
+                // Main content
                 if filteredItems.isEmpty {
                     EmptyStateView()
                 } else {
                     List {
                         ForEach(filteredItems, id: \.id) { item in
                             ClipboardItemRow(item: item)
-                                .onTapGesture {
-                                    copyToPasteboard(item: item)
-                                }
                         }
                         .onDelete(perform: deleteItems)
                     }
-                    .listStyle(PlainListStyle())
+                    .searchable(text: $searchText, prompt: "Search clipboard history")
                 }
             }
-            .navigationTitle("Clipboard History")
-            .navigationBarTitleDisplayMode(.large)
+            .navigationTitle("Clipboard")
             .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    EditButton()
-                }
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Menu {
                         Button("Clear All", role: .destructive) {
                             clearAllItems()
-                        }
-                        Button("Add Test Item") {
-                            addTestItem()
                         }
                     } label: {
                         Image(systemName: "ellipsis.circle")
@@ -91,73 +78,36 @@ struct ClipboardHistoryView: View {
         }
     }
 
-    private func copyToPasteboard(item: ClipboardItem) {
-        guard let content = item.content else { return }
-        
-        // Notify clipboard service before copying to avoid loop
-        clipboardService.notifyAppCopiedToClipboard(content: content)
-        
-        UIPasteboard.general.string = content
-        
-        // Show brief feedback
-        let impactFeedback = UIImpactFeedbackGenerator(style: .light)
-        impactFeedback.impactOccurred()
-    }
-
     private func deleteItems(offsets: IndexSet) {
         withAnimation {
-            let itemsToDelete = offsets.map { filteredItems[$0] }
-            print("🗑️ [iOS] Deleting \(itemsToDelete.count) clipboard items")
-            
-            for item in itemsToDelete {
-                let itemId = item.id?.uuidString ?? "unknown"
-                let content = item.content?.prefix(50) ?? "no content"
-                print("   - Deleting: \(itemId) - \(content)")
-            }
-            
-            itemsToDelete.forEach(viewContext.delete)
+            offsets.map { filteredItems[$0] }.forEach(viewContext.delete)
 
             do {
                 try viewContext.save()
-                print("✅ [iOS] Deletion saved to CloudKit for \(itemsToDelete.count) items")
             } catch {
+                // Handle error appropriately
                 let nsError = error as NSError
-                print("❌ [iOS] Delete error: \(nsError), \(nsError.userInfo)")
+                fatalError("Unresolved error \(nsError), \(nsError.userInfo)")
             }
         }
     }
     
     private func clearAllItems() {
         withAnimation {
-            let itemCount = filteredItems.count
-            print("🗑️ [iOS] Clearing all \(itemCount) clipboard items")
-            
-            filteredItems.forEach(viewContext.delete)
+            clipboardItems.forEach(viewContext.delete)
             
             do {
                 try viewContext.save()
-                print("✅ [iOS] Clear all saved to CloudKit for \(itemCount) items")
             } catch {
-                let nsError = error as NSError
-                print("❌ [iOS] Clear error: \(nsError), \(nsError.userInfo)")
+                print("Error clearing clipboard items: \(error)")
             }
         }
-    }
-    
-    private func addTestItem() {
-        let testContent = "Test clipboard item from iOS - \(Date().formatted(date: .abbreviated, time: .shortened))"
-        
-        // Notify clipboard service before copying to avoid loop
-        clipboardService.notifyAppCopiedToClipboard(content: testContent)
-        
-        UIPasteboard.general.string = testContent
-        
-        let impactFeedback = UIImpactFeedbackGenerator(style: .medium)
-        impactFeedback.impactOccurred()
     }
 }
 
 struct SettingsView: View {
+    @EnvironmentObject private var clipboardService: ClipboardService
+    
     var body: some View {
         NavigationView {
             List {
@@ -191,38 +141,9 @@ struct SettingsView: View {
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }
-                
-                Section("Clipboard Monitoring") {
-                    HStack {
-                        Image(systemName: "doc.on.clipboard")
-                            .foregroundColor(.orange)
-                        Text("Auto-capture")
-                        Spacer()
-                        Text("Active")
-                            .foregroundColor(.green)
-                    }
-                    
-                    Text("Clipboard changes are monitored and saved automatically. Due to iOS limitations, monitoring frequency is reduced.")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
             }
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.large)
-        }
-    }
-}
-
-struct SearchBar: View {
-    @Binding var text: String
-
-    var body: some View {
-        HStack {
-            Image(systemName: "magnifyingglass")
-                .foregroundColor(.gray)
-            
-            TextField("Search clipboard...", text: $text)
-                .textFieldStyle(RoundedBorderTextFieldStyle())
         }
     }
 }
@@ -234,6 +155,28 @@ struct ClipboardItemRow: View {
         ContentType(rawValue: item.contentType ?? "text") ?? .text
     }
     
+    private func formatTimestamp(_ date: Date) -> String {
+        let now = Date()
+        let timeInterval = now.timeIntervalSince(date)
+        
+        if timeInterval < 60 {
+            return "now"
+        } else if timeInterval < 3600 { // Less than 1 hour
+            let minutes = Int(timeInterval / 60)
+            return "\(minutes)m ago"
+        } else if timeInterval < 86400 { // Less than 1 day
+            let hours = Int(timeInterval / 3600)
+            return "\(hours)h ago"
+        } else if timeInterval < 604800 { // Less than 1 week
+            let days = Int(timeInterval / 86400)
+            return "\(days)d ago"
+        } else {
+            let formatter = DateFormatter()
+            formatter.dateStyle = .short
+            return formatter.string(from: date)
+        }
+    }
+    
     var body: some View {
         HStack {
             // Content type icon
@@ -243,7 +186,7 @@ struct ClipboardItemRow: View {
             
             VStack(alignment: .leading, spacing: 4) {
                 // Content preview
-                Text(item.contentPreview ?? "")
+                Text(item.content ?? "")
                     .font(.body)
                     .lineLimit(2)
                     .multilineTextAlignment(.leading)
@@ -258,26 +201,14 @@ struct ClipboardItemRow: View {
                     
                     Spacer()
                     
-                    // Device origin
-                    Text(item.deviceOrigin ?? "Unknown")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                    
                     // Timestamp
-                    Text(item.timestamp ?? Date(), style: .relative)
+                    Text(formatTimestamp(item.timestamp ?? Date()))
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }
             }
             
             Spacer()
-            
-            // Pin indicator
-            if item.isPinned {
-                Image(systemName: "pin.fill")
-                    .foregroundColor(.orange)
-                    .font(.caption)
-            }
         }
         .padding(.vertical, 4)
     }
@@ -285,7 +216,7 @@ struct ClipboardItemRow: View {
 
 struct EmptyStateView: View {
     var body: some View {
-        VStack(spacing: 16) {
+        VStack(spacing: 20) {
             Image(systemName: "doc.on.clipboard")
                 .font(.system(size: 60))
                 .foregroundColor(.gray)
@@ -294,13 +225,14 @@ struct EmptyStateView: View {
                 .font(.title2)
                 .fontWeight(.medium)
             
-            Text("Your clipboard history will appear here when you copy items on any of your synced devices.")
+            Text("Copy something on your Mac to see it appear here automatically.")
                 .font(.body)
                 .foregroundColor(.secondary)
                 .multilineTextAlignment(.center)
-                .padding(.horizontal, 40)
+                .padding(.horizontal, 20)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding(.horizontal, 40)
     }
 }
 

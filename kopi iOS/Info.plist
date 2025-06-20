@@ -5,6 +5,12 @@
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>remote-notification</string>
+		<string>background-app-refresh</string>
+		<string>background-processing</string>
 	</array>
+	<key>NSClipboardUsageDescription</key>
+	<string>Kopi needs access to your clipboard to automatically sync copied content across your devices. This allows seamless clipboard management between your Mac and iOS devices.</string>
+	<key>UIApplicationSupportsIndirectInputEvents</key>
+	<true/>
 </dict>
 </plist>

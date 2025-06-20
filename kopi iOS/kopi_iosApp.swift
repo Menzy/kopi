@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import BackgroundTasks
 
 @main
 struct kopi_iosApp: App {
@@ -17,6 +18,15 @@ struct kopi_iosApp: App {
             ContentView()
                 .environment(\.managedObjectContext, persistenceController.container.viewContext)
                 .environmentObject(clipboardService)
+                .onReceive(NotificationCenter.default.publisher(for: UIApplication.didFinishLaunchingNotification)) { _ in
+                    // Register background tasks on app launch
+                    registerBackgroundTasks()
+                }
         }
+    }
+    
+    private func registerBackgroundTasks() {
+        // This is handled in ClipboardService init, but we can add additional setup here if needed
+        print("📱 [iOS] App launched - background tasks registered")
     }
 }
