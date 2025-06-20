@@ -1,0 +1,24 @@
+# Xcode
+build/
+DerivedData/
+*.xcuserdata/
+*.xcworkspace/xcuserdata/
+
+# macOS
+.DS_Store
+
+# Build artifacts
+*.o
+*.a
+*.dylib
+*.framework
+*.app
+*.ipa
+*.dSYM/
+*.dSYM.zip
+
+# Temporary files
+*.tmp
+*.temp
+*.swp
+*.swo 
