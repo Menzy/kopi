@@ -135,24 +135,10 @@ struct ClipboardPreviewPopover: View {
                         .background(Color(NSColor.controlBackgroundColor).opacity(0.5))
                         .cornerRadius(6)
                     
-                    // Web view preview
-                    if let url = URL(string: content) {
-                        WebView(url: url)
-                            .frame(height: 300)
-                            .cornerRadius(8)
-                    } else {
-                        HStack {
-                            Image(systemName: "exclamationmark.triangle")
-                                .foregroundColor(.orange)
-                            Text("Invalid URL format")
-                                .font(.caption)
-                                .foregroundColor(.orange)
-                            Spacer()
-                        }
-                        .padding(8)
-                        .background(Color(NSColor.controlBackgroundColor).opacity(0.5))
-                        .cornerRadius(6)
-                    }
+                    // Link preview (larger version for preview window)
+                    LinkPreviewCard(url: content, isCompact: false)
+                        .frame(height: 300)
+                        .cornerRadius(8)
                 }
                 
             case .image:
@@ -348,6 +334,8 @@ struct WebView: NSViewRepresentable {
         }
     }
 }
+
+
 
 
 

@@ -10,19 +10,7 @@ import CoreData
 
 struct ContentView: View {
     var body: some View {
-        TabView {
-            ClipboardHistoryView()
-                .tabItem {
-                    Image(systemName: "doc.on.clipboard")
-                    Text("History")
-                }
-            
-            SettingsView()
-                .tabItem {
-                    Image(systemName: "gear")
-                    Text("Settings")
-                }
-        }
+        ClipboardHistoryView()
     }
 }
 
@@ -30,6 +18,7 @@ struct ClipboardHistoryView: View {
     @Environment(\.managedObjectContext) private var viewContext
     @EnvironmentObject private var clipboardService: ClipboardService
     @State private var searchText = ""
+    @State private var showingSettings = false
 
     @FetchRequest(
         sortDescriptors: [NSSortDescriptor(keyPath: \ClipboardItem.timestamp, ascending: false)],
@@ -50,44 +39,98 @@ struct ClipboardHistoryView: View {
     var body: some View {
         NavigationView {
             VStack(spacing: 0) {
+                // Search bar
+                HStack {
+                    HStack {
+                        Image(systemName: "magnifyingglass")
+                            .foregroundColor(.secondary)
+                        TextField("Search clipboard history", text: $searchText)
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .background(Color(.systemGray6))
+                    .cornerRadius(10)
+                }
+                .padding(.horizontal, 16)
+                .padding(.bottom, 16)
+                
                 // Main content
                 if filteredItems.isEmpty {
                     EmptyStateView()
                 } else {
-                    List {
-                        ForEach(filteredItems, id: \.id) { item in
-                            ClipboardItemRow(item: item)
+                    ScrollView {
+                        let screenWidth = UIScreen.main.bounds.width
+                        let totalPadding: CGFloat = 32 // 16 on each side
+                        let gridSpacing: CGFloat = 12
+                        let cardWidth = (screenWidth - totalPadding - gridSpacing) / 2
+                        
+                        LazyVGrid(columns: [
+                            GridItem(.fixed(cardWidth)),
+                            GridItem(.fixed(cardWidth))
+                        ], spacing: 16) {
+                            ForEach(Array(filteredItems.enumerated()), id: \.element.id) { index, item in
+                                ClipboardItemCard(item: item, isLarge: shouldUseLargeCard(for: item, at: index))
+                                    .frame(width: cardWidth)
+                                    .contextMenu {
+                                        Button("Copy") {
+                                            copyItem(item)
+                                        }
+                                        Button("Delete", role: .destructive) {
+                                            deleteItem(item)
+                                        }
+                                    }
+                            }
                         }
-                        .onDelete(perform: deleteItems)
+                        .padding(.horizontal, 16)
                     }
-                    .searchable(text: $searchText, prompt: "Search clipboard history")
                 }
             }
             .navigationTitle("Clipboard")
+            .navigationBarTitleDisplayMode(.large)
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Menu {
+                        Button("Settings") {
+                            showingSettings = true
+                        }
+                        
+                        Divider()
+                        
                         Button("Clear All", role: .destructive) {
                             clearAllItems()
                         }
                     } label: {
-                        Image(systemName: "ellipsis.circle")
+                        Image(systemName: "ellipsis")
+                            .font(.title2)
                     }
                 }
             }
+            .sheet(isPresented: $showingSettings) {
+                SettingsView()
+            }
+        }
+    }
+    
+    private func shouldUseLargeCard(for item: ClipboardItem, at index: Int) -> Bool {
+        let contentType = ContentType(rawValue: item.contentType ?? "text") ?? .text
+        // Make URL cards larger, and vary some text cards
+        return contentType == .url || (contentType == .text && index % 3 == 0)
+    }
+    
+    private func copyItem(_ item: ClipboardItem) {
+        if let content = item.content {
+            UIPasteboard.general.string = content
         }
     }
 
-    private func deleteItems(offsets: IndexSet) {
+    private func deleteItem(_ item: ClipboardItem) {
         withAnimation {
-            offsets.map { filteredItems[$0] }.forEach(viewContext.delete)
-
+            viewContext.delete(item)
+            
             do {
                 try viewContext.save()
             } catch {
-                // Handle error appropriately
-                let nsError = error as NSError
-                fatalError("Unresolved error \(nsError), \(nsError.userInfo)")
+                print("Error deleting item: \(error)")
             }
         }
     }
@@ -106,6 +149,7 @@ struct ClipboardHistoryView: View {
 }
 
 struct SettingsView: View {
+    @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var clipboardService: ClipboardService
     
     var body: some View {
@@ -144,12 +188,28 @@ struct SettingsView: View {
             }
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.large)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Done") {
+                        dismiss()
+                    }
+                }
+            }
         }
     }
 }
 
-struct ClipboardItemRow: View {
+struct ClipboardItemCard: View {
     let item: ClipboardItem
+    let isLarge: Bool
+    
+    // Add cardWidth as a property
+    private var cardWidth: CGFloat {
+        let screenWidth = UIScreen.main.bounds.width
+        let totalPadding: CGFloat = 32 // 16 on each side
+        let gridSpacing: CGFloat = 12
+        return (screenWidth - totalPadding - gridSpacing) / 2
+    }
     
     private var contentType: ContentType {
         ContentType(rawValue: item.contentType ?? "text") ?? .text
@@ -163,13 +223,13 @@ struct ClipboardItemRow: View {
             return "now"
         } else if timeInterval < 3600 { // Less than 1 hour
             let minutes = Int(timeInterval / 60)
-            return "\(minutes)m ago"
+            return "\(minutes)m"
         } else if timeInterval < 86400 { // Less than 1 day
             let hours = Int(timeInterval / 3600)
-            return "\(hours)h ago"
+            return "\(hours)h"
         } else if timeInterval < 604800 { // Less than 1 week
             let days = Int(timeInterval / 86400)
-            return "\(days)d ago"
+            return "\(days)d"
         } else {
             let formatter = DateFormatter()
             formatter.dateStyle = .short
@@ -177,42 +237,106 @@ struct ClipboardItemRow: View {
         }
     }
     
+    private var contentTypeLabel: String {
+        switch contentType {
+        case .text: return "Text"
+        case .url: return "Link"
+        case .image: return "Image"
+        }
+    }
+    
     var body: some View {
-        HStack {
-            // Content type icon
-            Image(systemName: contentType.systemImage)
-                .foregroundColor(contentType.color)
-                .frame(width: 20, height: 20)
-            
-            VStack(alignment: .leading, spacing: 4) {
-                // Content preview
-                Text(item.content ?? "")
-                    .font(.body)
-                    .lineLimit(2)
-                    .multilineTextAlignment(.leading)
+        VStack(alignment: .leading, spacing: 0) {
+            // Header with content type and timestamp
+            HStack {
+                Text(contentTypeLabel)
+                    .font(.subheadline)
+                    .fontWeight(.medium)
+                    .foregroundColor(.primary)
                 
-                HStack {
-                    // Source app
-                    if let sourceAppName = item.sourceAppName {
-                        Text(sourceAppName)
-                            .font(.caption)
-                            .foregroundColor(.secondary)
+                Spacer()
+                
+                Text(formatTimestamp(item.timestamp ?? Date()))
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+            }
+            .frame(height: 24)
+            .padding(.bottom, 12)
+            
+            // Content preview - takes remaining space
+            if let content = item.content {
+                switch contentType {
+                case .text:
+                    Text(content)
+                        .font(.body)
+                        .foregroundColor(.primary)
+                        .lineLimit(6)
+                        .multilineTextAlignment(.leading)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                    
+                case .url:
+                    LinkPreviewCard(url: content)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    
+                case .image:
+                    // Show actual image
+                    VStack(alignment: .leading, spacing: 0) {
+                        if let imageData = Data(base64Encoded: content) {
+                            if let uiImage = UIImage(data: imageData) {
+                                Image(uiImage: uiImage)
+                                    .resizable()
+                                    .aspectRatio(contentMode: .fill)
+                                    .frame(maxWidth: .infinity)
+                                    .frame(height: 80)
+                                    .clipped()
+                                    .cornerRadius(8)
+                            } else {
+                                // Image error fallback
+                                RoundedRectangle(cornerRadius: 8)
+                                    .fill(Color(.systemGray6))
+                                    .frame(maxWidth: .infinity)
+                                    .frame(height: 80)
+                                    .overlay(
+                                        VStack(spacing: 4) {
+                                            Image(systemName: "photo.badge.exclamationmark")
+                                                .font(.title3)
+                                                .foregroundColor(.secondary)
+                                            Text("Unable to load image")
+                                                .font(.caption2)
+                                                .foregroundColor(.secondary)
+                                        }
+                                    )
+                            }
+                        }
+                        
+                        Spacer()
                     }
-                    
-                    Spacer()
-                    
-                    // Timestamp
-                    Text(formatTimestamp(item.timestamp ?? Date()))
-                        .font(.caption)
-                        .foregroundColor(.secondary)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                 }
             }
-            
-            Spacer()
         }
-        .padding(.vertical, 4)
+        .padding(16)
+        .frame(width: cardWidth, height: 200)
+        .background(Color(.secondarySystemBackground))
+        .cornerRadius(16)
+        .shadow(color: Color.black.opacity(0.05), radius: 8, x: 0, y: 2)
+    }
+    
+    private func extractTitle(from url: URL) -> String {
+        // Simple title extraction from URL
+        if url.host?.contains("youtube.com") == true || url.host?.contains("youtu.be") == true {
+            return "YouTube"
+        } else if url.host?.contains("netflix.com") == true {
+            return "Netflix"
+        } else if url.host?.contains("github.com") == true {
+            return "GitHub"
+        } else {
+            return url.host?.capitalized ?? "Website"
+        }
     }
 }
+
+
 
 struct EmptyStateView: View {
     var body: some View {

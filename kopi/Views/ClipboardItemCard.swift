@@ -70,58 +70,8 @@ struct ClipboardItemCard: View {
                             .multilineTextAlignment(.leading)
                         
                     case .url:
-                        VStack(alignment: .leading, spacing: 4) {
-                            // URL text preview
-                            Text(content)
-                                .font(.system(.caption, design: .monospaced))
-                                .foregroundColor(.blue)
-                                .lineLimit(2)
-                                .textSelection(.enabled)
-                                .multilineTextAlignment(.leading)
-                            
-                            // Web preview thumbnail
-                            if let url = URL(string: content) {
-                                WebView(url: url)
-                                    .frame(width: 120, height: 80)
-                                    .clipped()
-                                    .cornerRadius(6)
-                                    .overlay(
-                                        // Loading overlay
-                                        RoundedRectangle(cornerRadius: 6)
-                                            .fill(Color.black.opacity(0.1))
-                                            .overlay(
-                                                HStack(spacing: 4) {
-                                                    Image(systemName: "globe")
-                                                        .font(.caption2)
-                                                        .foregroundColor(.white)
-                                                    Text("WEB")
-                                                        .font(.caption2)
-                                                        .fontWeight(.medium)
-                                                        .foregroundColor(.white)
-                                                }
-                                                .padding(4)
-                                                .background(Color.black.opacity(0.6))
-                                                .cornerRadius(4),
-                                                alignment: .bottomTrailing
-                                            )
-                                    )
-                            } else {
-                                // Invalid URL fallback
-                                RoundedRectangle(cornerRadius: 6)
-                                    .fill(Color(NSColor.controlBackgroundColor))
-                                    .frame(width: 120, height: 80)
-                                    .overlay(
-                                        VStack(spacing: 4) {
-                                            Image(systemName: "link.badge.plus")
-                                                .foregroundColor(.secondary)
-                                                .font(.title3)
-                                            Text("URL")
-                                                .font(.caption2)
-                                                .foregroundColor(.secondary)
-                                        }
-                                    )
-                            }
-                        }
+                        LinkPreviewCard(url: content, isCompact: true)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
                         
                     case .image:
                         // Show image thumbnail if possible
@@ -334,5 +284,29 @@ struct ContentTypeBadge: View {
             )
     }
 }
+
+#Preview {
+    let item = ClipboardItem()
+    item.content = "Hello, World! This is a sample clipboard item for testing the preview functionality."
+    item.contentType = ContentType.text.rawValue
+    item.timestamp = Date()
+    item.sourceAppName = "Xcode"
+    
+    return ClipboardItemCard(
+        item: item,
+        isSelected: false,
+        cardSize: 200,
+        onCopy: {},
+        onDelete: {},
+        onSelect: {},
+        onPreview: {},
+        onSave: { _, _ in },
+        showingPreview: .constant(false)
+    )
+    .frame(width: 200, height: 200)
+    .padding()
+}
+
+
 
  
