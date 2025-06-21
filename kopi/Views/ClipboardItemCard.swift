@@ -252,16 +252,20 @@ struct ClipboardItemCard: View {
         let timeInterval = now.timeIntervalSince(date)
         
         if timeInterval < 60 {
-            return "Just now"
-        } else if timeInterval < 3600 {
+            return "now"
+        } else if timeInterval < 3600 { // Less than 1 hour
             let minutes = Int(timeInterval / 60)
-            return "\(minutes)m ago"
-        } else if timeInterval < 86400 {
+            return "\(minutes)m"
+        } else if timeInterval < 86400 { // Less than 1 day
             let hours = Int(timeInterval / 3600)
-            return "\(hours)h ago"
-        } else {
+            return "\(hours)h"
+        } else if timeInterval < 604800 { // Less than 1 week
             let days = Int(timeInterval / 86400)
-            return "\(days)d ago"
+            return "\(days)d"
+        } else {
+            let formatter = DateFormatter()
+            formatter.dateStyle = .short
+            return formatter.string(from: date)
         }
     }
 }
