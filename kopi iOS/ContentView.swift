@@ -19,6 +19,8 @@ struct ClipboardHistoryView: View {
     @EnvironmentObject private var clipboardService: ClipboardService
     @State private var searchText = ""
     @State private var showingSettings = false
+    @State private var isSelectionMode = false
+    @State private var selectedItems: Set<NSManagedObjectID> = []
 
     @FetchRequest(
         sortDescriptors: [NSSortDescriptor(keyPath: \ClipboardItem.timestamp, ascending: false)],
@@ -69,9 +71,20 @@ struct ClipboardHistoryView: View {
                             GridItem(.fixed(cardWidth))
                         ], spacing: 16) {
                             ForEach(Array(filteredItems.enumerated()), id: \.element.id) { index, item in
-                                ClipboardItemCard(item: item, isLarge: shouldUseLargeCard(for: item, at: index))
-                                    .frame(width: cardWidth)
-                                    .contextMenu {
+                                ClipboardItemCard(
+                                    item: item, 
+                                    isLarge: shouldUseLargeCard(for: item, at: index),
+                                    isSelectionMode: isSelectionMode,
+                                    isSelected: selectedItems.contains(item.objectID)
+                                )
+                                .frame(width: cardWidth)
+                                .onTapGesture {
+                                    if isSelectionMode {
+                                        toggleSelection(for: item)
+                                    }
+                                }
+                                .contextMenu {
+                                    if !isSelectionMode {
                                         Button("Copy") {
                                             copyItem(item)
                                         }
@@ -79,29 +92,72 @@ struct ClipboardHistoryView: View {
                                             deleteItem(item)
                                         }
                                     }
+                                }
                             }
                         }
                         .padding(.horizontal, 16)
                     }
                 }
             }
-            .navigationTitle("Clipboard")
+            .navigationTitle(isSelectionMode ? "\(selectedItems.count) Selected" : "Clipboard")
             .navigationBarTitleDisplayMode(.large)
             .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Menu {
-                        Button("Settings") {
-                            showingSettings = true
+                if isSelectionMode {
+                    ToolbarItem(placement: .navigationBarLeading) {
+                        Button("Cancel") {
+                            exitSelectionMode()
                         }
-                        
-                        Divider()
-                        
-                        Button("Clear All", role: .destructive) {
-                            clearAllItems()
+                    }
+                    
+                    ToolbarItem(placement: .navigationBarTrailing) {
+                        Menu {
+                            Button("Select All") {
+                                selectAll()
+                            }
+                            
+                            Divider()
+                            
+                            Button("Copy", systemImage: "doc.on.doc") {
+                                copySelectedItems()
+                            }
+                            .disabled(selectedItems.isEmpty)
+                            
+                            Button("Share", systemImage: "square.and.arrow.up") {
+                                shareSelectedItems()
+                            }
+                            .disabled(selectedItems.isEmpty)
+                            
+                            Divider()
+                            
+                            Button("Delete", systemImage: "trash", role: .destructive) {
+                                deleteSelectedItems()
+                            }
+                            .disabled(selectedItems.isEmpty)
+                        } label: {
+                            Image(systemName: "ellipsis")
+                                .font(.title2)
                         }
-                    } label: {
-                        Image(systemName: "ellipsis")
-                            .font(.title2)
+                    }
+                } else {
+                    ToolbarItem(placement: .navigationBarTrailing) {
+                        Menu {
+                            Button("Select", systemImage: "checkmark.circle") {
+                                enterSelectionMode()
+                            }
+                            
+                            Button("Settings", systemImage: "gear") {
+                                showingSettings = true
+                            }
+                            
+                            Divider()
+                            
+                            Button("Clear All", systemImage: "trash", role: .destructive) {
+                                clearAllItems()
+                            }
+                        } label: {
+                            Image(systemName: "ellipsis")
+                                .font(.title2)
+                        }
                     }
                 }
             }
@@ -146,219 +202,87 @@ struct ClipboardHistoryView: View {
             }
         }
     }
-}
-
-struct SettingsView: View {
-    @Environment(\.dismiss) private var dismiss
-    @EnvironmentObject private var clipboardService: ClipboardService
     
-    var body: some View {
-        NavigationView {
-            List {
-                Section("About") {
-                    HStack {
-                        Text("App Version")
-                        Spacer()
-                        Text("1.0.0")
-                            .foregroundColor(.secondary)
-                    }
-                    
-                    HStack {
-                        Text("Platform")
-                        Spacer()
-                        Text("iOS")
-                            .foregroundColor(.secondary)
-                    }
-                }
-                
-                Section("Data Sync") {
-                    HStack {
-                        Image(systemName: "icloud")
-                            .foregroundColor(.blue)
-                        Text("iCloud Sync")
-                        Spacer()
-                        Text("Enabled")
-                            .foregroundColor(.green)
-                    }
-                    
-                    Text("Your clipboard history syncs automatically across all your devices using iCloud.")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-            }
-            .navigationTitle("Settings")
-            .navigationBarTitleDisplayMode(.large)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("Done") {
-                        dismiss()
-                    }
-                }
+    // MARK: - Selection Methods
+    
+    private func enterSelectionMode() {
+        withAnimation(.easeInOut(duration: 0.3)) {
+            isSelectionMode = true
+            selectedItems.removeAll()
+        }
+    }
+    
+    private func exitSelectionMode() {
+        withAnimation(.easeInOut(duration: 0.3)) {
+            isSelectionMode = false
+            selectedItems.removeAll()
+        }
+    }
+    
+    private func toggleSelection(for item: ClipboardItem) {
+        withAnimation(.easeInOut(duration: 0.2)) {
+            if selectedItems.contains(item.objectID) {
+                selectedItems.remove(item.objectID)
+            } else {
+                selectedItems.insert(item.objectID)
             }
         }
     }
-}
-
-struct ClipboardItemCard: View {
-    let item: ClipboardItem
-    let isLarge: Bool
     
-    // Add cardWidth as a property
-    private var cardWidth: CGFloat {
-        let screenWidth = UIScreen.main.bounds.width
-        let totalPadding: CGFloat = 32 // 16 on each side
-        let gridSpacing: CGFloat = 12
-        return (screenWidth - totalPadding - gridSpacing) / 2
+    private func selectAll() {
+        withAnimation(.easeInOut(duration: 0.3)) {
+            selectedItems = Set(filteredItems.map { $0.objectID })
+        }
     }
     
-    private var contentType: ContentType {
-        ContentType(rawValue: item.contentType ?? "text") ?? .text
-    }
-    
-    private func formatTimestamp(_ date: Date) -> String {
-        let now = Date()
-        let timeInterval = now.timeIntervalSince(date)
+    private func copySelectedItems() {
+        let selectedContents = filteredItems
+            .filter { selectedItems.contains($0.objectID) }
+            .compactMap { $0.content }
+            .joined(separator: "\n\n")
         
-        if timeInterval < 60 {
-            return "now"
-        } else if timeInterval < 3600 { // Less than 1 hour
-            let minutes = Int(timeInterval / 60)
-            return "\(minutes)m"
-        } else if timeInterval < 86400 { // Less than 1 day
-            let hours = Int(timeInterval / 3600)
-            return "\(hours)h"
-        } else if timeInterval < 604800 { // Less than 1 week
-            let days = Int(timeInterval / 86400)
-            return "\(days)d"
-        } else {
-            let formatter = DateFormatter()
-            formatter.dateStyle = .short
-            return formatter.string(from: date)
+        if !selectedContents.isEmpty {
+            UIPasteboard.general.string = selectedContents
+            exitSelectionMode()
         }
     }
     
-    private var contentTypeLabel: String {
-        switch contentType {
-        case .text: return "Text"
-        case .url: return "Link"
-        case .image: return "Image"
-        }
-    }
-    
-    var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            // Header with content type and timestamp
-            HStack {
-                Text(contentTypeLabel)
-                    .font(.subheadline)
-                    .fontWeight(.medium)
-                    .foregroundColor(.primary)
-                
-                Spacer()
-                
-                Text(formatTimestamp(item.timestamp ?? Date()))
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
-            }
-            .frame(height: 24)
-            .padding(.bottom, 12)
+    private func shareSelectedItems() {
+        let selectedContents = filteredItems
+            .filter { selectedItems.contains($0.objectID) }
+            .compactMap { $0.content }
+        
+        if !selectedContents.isEmpty {
+            let activityViewController = UIActivityViewController(
+                activityItems: selectedContents,
+                applicationActivities: nil
+            )
             
-            // Content preview - takes remaining space
-            if let content = item.content {
-                switch contentType {
-                case .text:
-                    Text(content)
-                        .font(.body)
-                        .foregroundColor(.primary)
-                        .lineLimit(6)
-                        .multilineTextAlignment(.leading)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                    
-                case .url:
-                    LinkPreviewCard(url: content)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    
-                case .image:
-                    // Show actual image
-                    VStack(alignment: .leading, spacing: 0) {
-                        if let imageData = Data(base64Encoded: content) {
-                            if let uiImage = UIImage(data: imageData) {
-                                Image(uiImage: uiImage)
-                                    .resizable()
-                                    .aspectRatio(contentMode: .fill)
-                                    .frame(maxWidth: .infinity)
-                                    .frame(height: 80)
-                                    .clipped()
-                                    .cornerRadius(8)
-                            } else {
-                                // Image error fallback
-                                RoundedRectangle(cornerRadius: 8)
-                                    .fill(Color(.systemGray6))
-                                    .frame(maxWidth: .infinity)
-                                    .frame(height: 80)
-                                    .overlay(
-                                        VStack(spacing: 4) {
-                                            Image(systemName: "photo.badge.exclamationmark")
-                                                .font(.title3)
-                                                .foregroundColor(.secondary)
-                                            Text("Unable to load image")
-                                                .font(.caption2)
-                                                .foregroundColor(.secondary)
-                                        }
-                                    )
-                            }
-                        }
-                        
-                        Spacer()
-                    }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-                }
+            if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+               let rootViewController = windowScene.windows.first?.rootViewController {
+                rootViewController.present(activityViewController, animated: true)
             }
+            
+            exitSelectionMode()
         }
-        .padding(16)
-        .frame(width: cardWidth, height: 200)
-        .background(Color(.secondarySystemBackground))
-        .cornerRadius(16)
-        .shadow(color: Color.black.opacity(0.05), radius: 8, x: 0, y: 2)
     }
     
-    private func extractTitle(from url: URL) -> String {
-        // Simple title extraction from URL
-        if url.host?.contains("youtube.com") == true || url.host?.contains("youtu.be") == true {
-            return "YouTube"
-        } else if url.host?.contains("netflix.com") == true {
-            return "Netflix"
-        } else if url.host?.contains("github.com") == true {
-            return "GitHub"
-        } else {
-            return url.host?.capitalized ?? "Website"
+    private func deleteSelectedItems() {
+        withAnimation {
+            let itemsToDelete = filteredItems.filter { selectedItems.contains($0.objectID) }
+            itemsToDelete.forEach(viewContext.delete)
+            
+            do {
+                try viewContext.save()
+                exitSelectionMode()
+            } catch {
+                print("Error deleting selected items: \(error)")
+            }
         }
     }
 }
 
 
-
-struct EmptyStateView: View {
-    var body: some View {
-        VStack(spacing: 20) {
-            Image(systemName: "doc.on.clipboard")
-                .font(.system(size: 60))
-                .foregroundColor(.gray)
-            
-            Text("No Clipboard History")
-                .font(.title2)
-                .fontWeight(.medium)
-            
-            Text("Copy something on your Mac to see it appear here automatically.")
-                .font(.body)
-                .foregroundColor(.secondary)
-                .multilineTextAlignment(.center)
-                .padding(.horizontal, 20)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .padding(.horizontal, 40)
-    }
-}
 
 #Preview {
     ContentView().environment(\.managedObjectContext, PersistenceController.preview.container.viewContext)
