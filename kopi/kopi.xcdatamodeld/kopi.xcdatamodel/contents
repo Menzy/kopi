@@ -14,8 +14,18 @@
         <attribute name="fileSize" attributeType="Integer 64" defaultValueString="0" usesScalarValueType="YES"/>
         <attribute name="isTransient" attributeType="Boolean" defaultValueString="NO" usesScalarValueType="YES"/>
         <attribute name="isSensitive" attributeType="Boolean" defaultValueString="NO" usesScalarValueType="YES"/>
+        <attribute name="canonicalID" optional="YES" attributeType="UUID" usesScalarValueType="NO"/>
+        <attribute name="initiatingDevice" optional="YES" attributeType="String"/>
+        <attribute name="syncSource" optional="YES" attributeType="String"/>
+        <attribute name="isTemporary" attributeType="Boolean" defaultValueString="NO" usesScalarValueType="YES"/>
+        <attribute name="version" attributeType="Integer 32" defaultValueString="1" usesScalarValueType="YES"/>
+        <attribute name="lastModified" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+        <attribute name="lastModifyingDevice" optional="YES" attributeType="String"/>
+        <attribute name="isFavorite" attributeType="Boolean" defaultValueString="NO" usesScalarValueType="YES"/>
+        <attribute name="collections" optional="YES" attributeType="String"/>
+        <attribute name="sortOrder" attributeType="Integer 32" defaultValueString="0" usesScalarValueType="YES"/>
     </entity>
     <elements>
-        <element name="ClipboardItem" positionX="-63" positionY="-18" width="128" height="224"/>
+        <element name="ClipboardItem" positionX="-63" positionY="-18" width="128" height="344"/>
     </elements>
 </model>

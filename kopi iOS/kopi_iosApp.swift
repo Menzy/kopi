@@ -11,6 +11,10 @@ import BackgroundTasks
 @main
 struct kopi_iosApp: App {
     let persistenceController = PersistenceController.shared
+    let deviceManager = DeviceManager.shared
+    let cloudKitSyncManager = CloudKitSyncManager.shared
+    let idResolver = IDResolver.shared
+    let unifiedOperationsManager = UnifiedOperationsManager.shared
     @StateObject private var clipboardService = ClipboardService()
 
     var body: some Scene {

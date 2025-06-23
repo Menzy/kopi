@@ -60,6 +60,9 @@ struct PersistenceController {
             // Enable CloudKit sync
             description.setOption(true as NSNumber, forKey: NSPersistentHistoryTrackingKey)
             description.setOption(true as NSNumber, forKey: NSPersistentStoreRemoteChangeNotificationPostOptionKey)
+            
+            // Set the correct CloudKit container identifier to match entitlements
+            description.cloudKitContainerOptions = NSPersistentCloudKitContainerOptions(containerIdentifier: "iCloud.com.wanmenzy.kopi-shared")
         }
         
         // Load persistent stores with simple error handling
@@ -92,7 +95,7 @@ struct PersistenceController {
             object: container.persistentStoreCoordinator,
             queue: .main
         ) { notification in
-            print("📡 [iOS] CloudKit remote change notification received")
+            // CloudKit remote change received (silent)
         }
     }
 }

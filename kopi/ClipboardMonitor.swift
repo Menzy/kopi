@@ -32,6 +32,10 @@ class ClipboardMonitor: ObservableObject {
     private let dataManager = ClipboardDataManager.shared
     private let sourceAppDetector = SourceAppDetector.shared
     private let privacyFilter = PrivacyFilter.shared
+    private let correlator = ClipboardCorrelator.shared
+    
+    // Fixed monitoring frequency
+    private let monitoringFrequency: TimeInterval = 0.1
     
     private init() {
         lastChangeCount = pasteboard.changeCount
@@ -46,8 +50,8 @@ class ClipboardMonitor: ObservableObject {
         lastChangeCount = pasteboard.changeCount
         lastContentHash = getClipboardContentHash()
         
-        // Start high-frequency timer-based monitoring (polling every 0.05 seconds for ultra-fast response)
-        monitoringTimer = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { [weak self] _ in
+        // Start timer-based monitoring with fixed frequency
+        monitoringTimer = Timer.scheduledTimer(withTimeInterval: monitoringFrequency, repeats: true) { [weak self] _ in
             self?.checkClipboardChanges()
         }
         
@@ -103,6 +107,7 @@ class ClipboardMonitor: ObservableObject {
         
         lastChangeCount = currentChangeCount
         lastContentHash = currentContentHash
+        
         handleClipboardChange()
     }
     
@@ -136,7 +141,7 @@ class ClipboardMonitor: ObservableObject {
             
             // Skip if this change was made by our app
             if self.shouldIgnoreClipboardChange(content: clipboardContent.content) {
-                print("Ignoring clipboard change made by this app: \(clipboardContent.content.prefix(30))")
+                // Ignoring clipboard change made by this app (silent)
                 return
             }
             
@@ -154,13 +159,20 @@ class ClipboardMonitor: ObservableObject {
                 return
             }
             
-            // Save to data store
+            // Correlate with Universal Clipboard to determine if this is a cross-device transfer
+            let correlation = self.correlator.correlateWithUniversalClipboard(
+                content: clipboardContent.content,
+                contentType: clipboardContent.type
+            )
+            
+            // Save to data store with correlation info
             self.saveClipboardItem(
                 content: clipboardContent.content,
                 type: clipboardContent.type,
                 sourceApp: sourceAppInfo.bundleID,
                 sourceAppName: sourceAppInfo.name,
-                sourceAppIcon: sourceAppInfo.iconData
+                sourceAppIcon: sourceAppInfo.iconData,
+                correlation: correlation
             )
             
             // Update published properties on main queue
@@ -267,13 +279,14 @@ class ClipboardMonitor: ObservableObject {
         return UTType(uti)?.conforms(to: .image) == true
     }
     
-    private func saveClipboardItem(content: String, type: ContentType, sourceApp: String?, sourceAppName: String?, sourceAppIcon: Data?) {
+    private func saveClipboardItem(content: String, type: ContentType, sourceApp: String?, sourceAppName: String?, sourceAppIcon: Data?, correlation: CorrelationResult) {
         _ = dataManager.createClipboardItem(
             content: content,
             contentType: type,
             sourceApp: sourceApp,
             sourceAppName: sourceAppName,
-            sourceAppIcon: sourceAppIcon
+            sourceAppIcon: sourceAppIcon,
+            correlation: correlation
         )
     }
     
@@ -281,10 +294,14 @@ class ClipboardMonitor: ObservableObject {
     
     // Call this method when the app copies something to the clipboard
     // This helps avoid detecting our own clipboard changes
-    func notifyAppCopiedToClipboard(content: String) {
+    func notifyAppCopiedToClipboard(content: String, contentType: ContentType = .text) {
         lastAppCopyContent = content
         lastAppCopyTime = Date()
-        print("App copied to clipboard: \(content.prefix(30))")
+        
+        // Register with correlator for Universal Clipboard tracking
+        correlator.registerLocalClipboardAction(content: content, contentType: contentType)
+        
+        // App copied to clipboard (silent logging)
     }
     
     // Check if a clipboard change should be ignored (was made by this app)
@@ -298,6 +315,10 @@ class ClipboardMonitor: ObservableObject {
         }
         
         return false
+    }
+    
+    deinit {
+        NotificationCenter.default.removeObserver(self)
     }
 }
 

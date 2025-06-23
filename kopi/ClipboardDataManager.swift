@@ -14,6 +14,9 @@ class ClipboardDataManager: ObservableObject {
     static let shared = ClipboardDataManager()
     
     private let persistenceController = PersistenceController.shared
+    private let deviceManager = DeviceManager.shared
+    private let idResolver = IDResolver.shared
+    private let cloudKitSyncManager = CloudKitSyncManager.shared
     
     private var viewContext: NSManagedObjectContext {
         persistenceController.container.viewContext
@@ -28,9 +31,14 @@ class ClipboardDataManager: ObservableObject {
         contentType: ContentType,
         sourceApp: String? = nil,
         sourceAppName: String? = nil,
-        sourceAppIcon: Data? = nil
+        sourceAppIcon: Data? = nil,
+        syncSource: SyncSource = .localCopy,
+        isTemporary: Bool = false,
+        correlation: CorrelationResult? = nil
     ) -> ClipboardItem {
         let item = ClipboardItem(context: viewContext)
+        
+        // Basic item properties
         item.id = UUID()
         item.content = content
         item.contentType = contentType.rawValue
@@ -41,16 +49,60 @@ class ClipboardDataManager: ObservableObject {
         item.sourceAppName = sourceAppName
         item.sourceAppIcon = sourceAppIcon
         item.fileSize = Int64(content.data(using: .utf8)?.count ?? 0)
-
         item.isTransient = false
         item.isSensitive = false
         
+        // New unified sync properties - handle correlation
+        if let correlation = correlation {
+            if correlation.isUniversalClipboard, let canonicalID = correlation.suggestedCanonicalID {
+                // Use existing canonical ID from correlation
+                item.canonicalID = canonicalID
+                item.syncSource = SyncSource.universalClipboard.rawValue
+                
+                // If correlation has a matching item, get the original initiating device
+                if let matchingItem = correlation.matchingItem {
+                    item.initiatingDevice = matchingItem.initiatingDevice ?? deviceManager.getDeviceID()
+                } else {
+                    item.initiatingDevice = deviceManager.getDeviceID()
+                }
+                
+                print("🔗 [Correlation] Using existing canonical ID: \(canonicalID.uuidString)")
+                print("   📡 Source: Universal Clipboard (\(correlation.matchReason))")
+            } else {
+                // New item - create canonical ID
+                item.canonicalID = deviceManager.createCanonicalID()
+                item.initiatingDevice = deviceManager.getDeviceID()
+                item.syncSource = syncSource.rawValue
+            }
+        } else {
+            // No correlation provided - new local item
+            item.canonicalID = deviceManager.createCanonicalID()
+            item.initiatingDevice = deviceManager.getDeviceID()
+            item.syncSource = syncSource.rawValue
+        }
+        
+        item.isTemporary = isTemporary
+        
         let itemId = item.id?.uuidString ?? "unknown"
-        print("➕ [macOS] Creating clipboard item: \(itemId) - \(content.prefix(50))")
+        let canonicalId = item.canonicalID?.uuidString ?? "unknown"
+        // Creating clipboard item
+        print("   📍 Canonical ID: \(canonicalId)")
+        print("   🔗 Sync Source: \(syncSource.displayName)")
+        print("   📱 Device: \(deviceManager.getDeviceID())")
+        print("   📄 Content: \(content.prefix(50))")
         
         saveContext()
         
-        print("✅ [macOS] Item saved to CloudKit: \(itemId)")
+        // Item saved to CloudKit
+        
+        // Trigger ID resolution for temporary items or when correlation suggests shared canonical ID
+        if item.isTemporary || (correlation?.isUniversalClipboard == true && correlation?.suggestedCanonicalID != nil) {
+            Task {
+                let result = await idResolver.resolveCanonicalID(for: item)
+                // ID Resolution completed
+            }
+        }
+        
         return item
     }
     
@@ -82,27 +134,45 @@ class ClipboardDataManager: ObservableObject {
     
     func deleteClipboardItem(_ item: ClipboardItem) {
         let itemId = item.id?.uuidString ?? "unknown"
+        let canonicalId = item.canonicalID?.uuidString ?? "unknown"
         let content = item.content?.prefix(50) ?? "no content"
         print("🗑️ [macOS] Deleting clipboard item: \(itemId) - \(content)")
+        print("   📍 Canonical ID: \(canonicalId)")
         
+        // If item has canonical ID, delete across all devices
+        if let canonicalID = item.canonicalID {
+            Task {
+                await cloudKitSyncManager.deleteItemAcrossDevices(canonicalID: canonicalID)
+            }
+        } else {
+            // Fallback: local delete only
         viewContext.delete(item)
         saveContext()
+        }
         
-        print("✅ [macOS] Deletion saved to CloudKit for item: \(itemId)")
+        print("✅ [macOS] Initiated cross-device deletion for canonical ID: \(canonicalId)")
     }
     
     func deleteClipboardItems(_ items: [ClipboardItem]) {
         print("🗑️ [macOS] Batch deleting \(items.count) clipboard items")
         
+        let canonicalIDs = items.compactMap { $0.canonicalID }
+        
         for item in items {
             let itemId = item.id?.uuidString ?? "unknown"
+            let canonicalId = item.canonicalID?.uuidString ?? "unknown"
             let content = item.content?.prefix(30) ?? "no content"
-            print("   - Deleting: \(itemId) - \(content)")
-            viewContext.delete(item)
+            print("   - Deleting: \(itemId) (\(canonicalId)) - \(content)")
         }
-        saveContext()
         
-        print("✅ [macOS] Batch deletion saved to CloudKit for \(items.count) items")
+        // Delete across all devices using canonical IDs
+        Task {
+            for canonicalID in canonicalIDs {
+                await cloudKitSyncManager.deleteItemAcrossDevices(canonicalID: canonicalID)
+        }
+        }
+        
+        print("✅ [macOS] Initiated cross-device batch deletion for \(canonicalIDs.count) items")
     }
     
 

@@ -13,6 +13,8 @@ import UniformTypeIdentifiers
 
 class ClipboardService: ObservableObject {
     private let persistenceController = PersistenceController.shared
+    private let deviceManager = DeviceManager.shared
+    private let correlator = ClipboardCorrelator.shared
     private var lastChangeCount: Int = 0
     private var timer: Timer?
     private var backgroundTask: UIBackgroundTaskIdentifier = .invalid
@@ -127,6 +129,11 @@ class ClipboardService: ObservableObject {
     private func saveClipboardItem(content: String, type: ContentType) {
         let context = persistenceController.container.viewContext
         
+        // Determine sync source - if this appears to be from Universal Clipboard
+        let syncSource: SyncSource = deviceManager.detectUniversalClipboardTransfer(content: content, timestamp: Date()) 
+            ? .universalClipboard 
+            : .localCopy
+        
         // Check if this content already exists (avoid duplicates)
         let fetchRequest: NSFetchRequest<ClipboardItem> = ClipboardItem.fetchRequest()
         fetchRequest.predicate = NSPredicate(format: "content == %@", content)
@@ -137,14 +144,38 @@ class ClipboardService: ObservableObject {
             if !existingItems.isEmpty {
                 // Update timestamp of existing item
                 existingItems.first?.timestamp = Date()
+                print("📝 [iOS] Updated existing item timestamp")
             } else {
-                // Create new clipboard item
+                // Create new clipboard item with enhanced metadata
                 let newItem = ClipboardItem(context: context)
                 newItem.id = UUID()
                 newItem.content = content
                 newItem.timestamp = Date()
                 newItem.contentType = type.rawValue
-                newItem.sourceAppName = "Mac"
+                newItem.sourceAppName = syncSource == .universalClipboard ? "Mac" : "iOS"
+                
+                // Set unified sync properties
+                if syncSource == .universalClipboard {
+                    // This is likely from Universal Clipboard - mark as temporary
+                    // until we can resolve the canonical ID from the originating device
+                    newItem.canonicalID = UUID() // Temporary - will be updated later
+                    newItem.initiatingDevice = nil // Will be resolved later
+                    newItem.isTemporary = true
+                } else {
+                    // This is a local copy - we are the initiating device
+                    newItem.canonicalID = deviceManager.createCanonicalID()
+                    newItem.initiatingDevice = deviceManager.getDeviceID()
+                    newItem.isTemporary = false
+                }
+                
+                newItem.syncSource = syncSource.rawValue
+                
+                let canonicalId = newItem.canonicalID?.uuidString ?? "unknown"
+                print("➕ [iOS] Creating clipboard item:")
+                print("   📍 Canonical ID: \(canonicalId)")
+                print("   🔗 Sync Source: \(syncSource.displayName)")
+                print("   📱 Device: \(deviceManager.getDeviceID())")
+                print("   🔄 Temporary: \(newItem.isTemporary)")
             }
             
             try context.save()
@@ -231,6 +262,19 @@ class ClipboardService: ObservableObject {
         return url.scheme != nil && (url.scheme == "http" || url.scheme == "https")
     }
     
+    // MARK: - App Copy Tracking
+    
+    // Call this method when the app copies something to the clipboard
+    // This helps avoid detecting our own clipboard changes
+    func notifyAppCopiedToClipboard(content: String, contentType: ContentType = .text) {
+        lastAppCopyContent = content
+        lastAppCopyTime = Date()
+        
+        // Register with correlator for Universal Clipboard tracking
+        correlator.registerLocalClipboardAction(content: content, contentType: contentType)
+        
+        print("🍎 [iOS] App copied to clipboard: \(content.prefix(30))")
+    }
 
 }
 
