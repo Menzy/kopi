@@ -6,18 +6,21 @@
 //
 
 import SwiftUI
+import CloudKit
 
 @main
 struct kopiApp: App {
     let persistenceController = PersistenceController.shared
     @StateObject private var clipboardMonitor = ClipboardMonitor.shared
     @StateObject private var keyboardManager = KeyboardShortcutManager.shared
+    @StateObject private var cloudKitManager = CloudKitManager.shared
 
     var body: some Scene {
         WindowGroup {
             ContentView()
                 .environment(\.managedObjectContext, persistenceController.container.viewContext)
                 .environmentObject(clipboardMonitor)
+                .environmentObject(cloudKitManager)
                 .onAppear {
                     setupApp()
                 }
@@ -35,6 +38,11 @@ struct kopiApp: App {
         
         // Register global keyboard shortcuts
         keyboardManager.registerGlobalShortcut()
+        
+        // Initialize CloudKit subscriptions
+        Task {
+            try? await cloudKitManager.subscribeToChanges()
+        }
     }
     
     private func teardownApp() {

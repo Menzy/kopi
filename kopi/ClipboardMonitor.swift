@@ -25,6 +25,10 @@ class ClipboardMonitor: ObservableObject {
     private var lastAppCopyContent: String?
     private var lastAppCopyTime: Date?
     
+    // Phase 3: Universal Handoff Detection
+    private var lastHandoffDetectionTime: Date?
+    private let handoffDetectionWindow: TimeInterval = 2.0 // 2 seconds to detect handoff
+    
     @Published var isMonitoring: Bool = false
     @Published var lastClipboardContent: String = ""
     @Published var clipboardDidChange: Bool = false
@@ -35,6 +39,42 @@ class ClipboardMonitor: ObservableObject {
     
     private init() {
         lastChangeCount = pasteboard.changeCount
+        setupHandoffNotifications()
+    }
+    
+    // MARK: - Phase 3: Universal Handoff Setup
+    
+    private func setupHandoffNotifications() {
+        // Listen for handoff-related system notifications
+        NotificationCenter.default.addObserver(
+            forName: NSNotification.Name("NSApplicationWillContinueUserActivityNotification"),
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.prepareForHandoffDetection()
+        }
+        
+        // Monitor for handoff activity types
+        NotificationCenter.default.addObserver(
+            forName: NSNotification.Name("NSApplicationDidContinueUserActivityNotification"), 
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            self?.handlePotentialHandoffActivity(notification)
+        }
+    }
+    
+    private func prepareForHandoffDetection() {
+        lastHandoffDetectionTime = Date()
+        print("🔄 [MacBook Relay] Preparing for potential handoff detection")
+    }
+    
+    private func handlePotentialHandoffActivity(_ notification: Notification) {
+        print("🔄 [MacBook Relay] Potential handoff activity detected")
+        // Immediate clipboard check after handoff activity
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
+            self?.forceCheck()
+        }
     }
     
     // MARK: - Public Methods
@@ -77,6 +117,10 @@ class ClipboardMonitor: ObservableObject {
         
         // Remove notification observers
         NotificationCenter.default.removeObserver(self, name: NSApplication.didBecomeActiveNotification, object: nil)
+        
+        // Phase 3: Remove handoff notification observers
+        NotificationCenter.default.removeObserver(self, name: NSNotification.Name("NSApplicationWillContinueUserActivityNotification"), object: nil)
+        NotificationCenter.default.removeObserver(self, name: NSNotification.Name("NSApplicationDidContinueUserActivityNotification"), object: nil)
     }
     
     func forceCheck() {
@@ -140,8 +184,22 @@ class ClipboardMonitor: ObservableObject {
                 return
             }
             
-            // Detect source application first
-            let sourceAppInfo = self.sourceAppDetector.detectCurrentApp()
+            // Phase 3: Detect if this is Universal Handoff data
+            let isHandoffData = self.isUniversalHandoffData()
+            let sourceAppInfo: SourceAppInfo
+            
+            if isHandoffData {
+                print("🔄 [MacBook Relay] Universal Handoff detected - iPhone → MacBook relay")
+                // For handoff data, we know it came from iPhone
+                sourceAppInfo = SourceAppInfo(
+                    bundleID: "com.apple.universalhandoff.iphone", 
+                    name: "iPhone (Handoff)",
+                    iconData: nil
+                )
+            } else {
+                // Detect source application for local clipboard changes
+                sourceAppInfo = self.sourceAppDetector.detectCurrentApp()
+            }
             
             // Check for privacy restrictions
             let privacyCheck = self.privacyFilter.shouldExcludeContent(
@@ -154,13 +212,14 @@ class ClipboardMonitor: ObservableObject {
                 return
             }
             
-            // Save to data store
+            // Phase 3: Save with relay metadata
             self.saveClipboardItem(
                 content: clipboardContent.content,
                 type: clipboardContent.type,
                 sourceApp: sourceAppInfo.bundleID,
                 sourceAppName: sourceAppInfo.name,
-                sourceAppIcon: sourceAppInfo.iconData
+                sourceAppIcon: sourceAppInfo.iconData,
+                isHandoffRelay: isHandoffData
             )
             
             // Update published properties on main queue
@@ -247,6 +306,49 @@ class ClipboardMonitor: ObservableObject {
         return nil
     }
     
+    // MARK: - Phase 3: Universal Handoff Detection
+    
+    private func isUniversalHandoffData() -> Bool {
+        // Check if clipboard change occurred within handoff detection window
+        if let handoffTime = lastHandoffDetectionTime,
+           Date().timeIntervalSince(handoffTime) <= handoffDetectionWindow {
+            return true
+        }
+        
+        // Additional heuristics for handoff detection
+        return detectHandoffHeuristics()
+    }
+    
+    private func detectHandoffHeuristics() -> Bool {
+        let pasteboard = NSPasteboard.general
+        
+        // Check for handoff-specific pasteboard properties
+        // Universal Handoff often includes specific pasteboard types or metadata
+        let pasteboardTypes = pasteboard.types ?? []
+        
+        // Look for handoff-specific types or patterns
+        let handoffIndicators = [
+            "com.apple.handoff.clipboard",
+            "com.apple.uikit.pasteboard",
+            "public.utf8-plain-text" // with specific patterns
+        ]
+        
+        for type in pasteboardTypes {
+            if handoffIndicators.contains(type.rawValue) {
+                return true
+            }
+        }
+        
+        // Check for timing patterns typical of handoff
+        let timeSinceLastChange = Date().timeIntervalSince(lastHandoffDetectionTime ?? Date.distantPast)
+        if timeSinceLastChange < 3.0 && timeSinceLastChange > 0.1 {
+            // If clipboard changed shortly after potential handoff preparation
+            return true
+        }
+        
+        return false
+    }
+    
     // MARK: - Helper Methods
     
     private func isValidURL(_ string: String) -> Bool {
@@ -267,14 +369,90 @@ class ClipboardMonitor: ObservableObject {
         return UTType(uti)?.conforms(to: .image) == true
     }
     
-    private func saveClipboardItem(content: String, type: ContentType, sourceApp: String?, sourceAppName: String?, sourceAppIcon: Data?) {
-        _ = dataManager.createClipboardItem(
+    private func saveClipboardItem(content: String, type: ContentType, sourceApp: String?, sourceAppName: String?, sourceAppIcon: Data?, isHandoffRelay: Bool = false) {
+        // Phase 3: Create clipboard item with relay metadata
+        let clipboardItem = dataManager.createClipboardItem(
             content: content,
             contentType: type,
             sourceApp: sourceApp,
             sourceAppName: sourceAppName,
             sourceAppIcon: sourceAppIcon
         )
+        
+        // Phase 3: Set relay metadata if this is handoff data
+        if isHandoffRelay {
+            let deviceIdentifier = ContentHashingUtility.getDeviceIdentifier()
+            clipboardItem.relayedBy = deviceIdentifier
+            clipboardItem.createdOnDevice = "iPhone" // We know handoff comes from iPhone
+            print("🔄 [MacBook Relay] Item marked as relayed from iPhone: \(clipboardItem.id?.uuidString ?? "unknown")")
+        }
+        
+        // Phase 5: Enhanced MacBook relay with offline fallback
+        print("📤 [MacBook Relay] Processing clipboard item...")
+        dataManager.saveContext() // Save first to ensure Core Data integrity
+        
+        // Phase 5: Try iCloud push first, with offline queue fallback
+        Task {
+            await handleClipboardSync(clipboardItem, content: content, isHandoffRelay: isHandoffRelay)
+        }
+    }
+    
+    // MARK: - Phase 5: Enhanced Sync with Offline Fallback
+    
+    private func handleClipboardSync(_ clipboardItem: ClipboardItem, content: String, isHandoffRelay: Bool) async {
+        do {
+            // Try to push to iCloud
+            try await dataManager.cloudKitManager.pushItem(clipboardItem)
+            print("✅ [MacBook Relay] Successfully pushed to iCloud: \(content.prefix(30))")
+            
+            // If this was a handoff relay and iCloud succeeded, mark it
+            if isHandoffRelay {
+                print("🔄 [MacBook Relay] Successfully relayed handoff item to iCloud")
+            }
+            
+        } catch {
+            print("❌ [MacBook Relay] iCloud push failed: \(error)")
+            
+            // Phase 5: Offline fallback - the operation is already queued by CloudKitManager
+            // But we can enhance handoff support for immediate cross-device sharing
+            if isHandoffRelay {
+                print("🔄 [Offline Fallback] Handoff item will be queued until online")
+            } else {
+                // For local items, we could implement enhanced Universal Handoff broadcasting
+                await handleOfflineFallback(content: content, type: ContentType(rawValue: clipboardItem.contentType ?? "") ?? .text)
+            }
+        }
+    }
+    
+    private func handleOfflineFallback(content: String, type: ContentType) async {
+        // Phase 5: When offline, MacBook can still act as Universal Handoff broadcaster
+        print("📡 [Offline Fallback] Broadcasting via Universal Handoff while offline")
+        
+        // Create a handoff activity to broadcast the clipboard content
+        let handoffActivity = NSUserActivity(activityType: "com.wanmenzy.kopi.macbook.clipboard")
+        handoffActivity.title = "Kopi Clipboard (MacBook)"
+        handoffActivity.isEligibleForHandoff = true
+        handoffActivity.isEligibleForSearch = false
+        handoffActivity.webpageURL = nil
+        
+        // Include clipboard data in handoff
+        handoffActivity.userInfo = [
+            "clipboard_content": content,
+            "clipboard_type": type.rawValue,
+            "device_id": ContentHashingUtility.getDeviceIdentifier(),
+            "timestamp": Date().timeIntervalSince1970,
+            "offline_fallback": true
+        ]
+        
+        handoffActivity.needsSave = true
+        handoffActivity.becomeCurrent()
+        
+        print("📡 [Offline Fallback] MacBook broadcasting clipboard via Universal Handoff")
+        
+        // Keep the activity current for a reasonable time to allow pickup
+        DispatchQueue.main.asyncAfter(deadline: .now() + 30.0) {
+            handoffActivity.resignCurrent()
+        }
     }
     
     // MARK: - App Copy Tracking

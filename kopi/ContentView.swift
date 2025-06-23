@@ -34,7 +34,7 @@ struct ContentView: View {
         case .contentType(let contentType):
             items = items.filter { $0.contentType == contentType.rawValue }
         case .app(let bundleID):
-            items = items.filter { $0.sourceApp == bundleID }
+            items = items.filter { $0.sourceAppBundleID == bundleID }
         }
         
         // Apply search text filter
@@ -46,7 +46,7 @@ struct ContentView: View {
         }
         
         // Sort by newest first (default behavior)
-        items.sort { ($0.timestamp ?? Date.distantPast) > ($1.timestamp ?? Date.distantPast) }
+        items.sort { ($0.createdAt ?? Date.distantPast) > ($1.createdAt ?? Date.distantPast) }
         
         return items
     }

@@ -7,20 +7,29 @@
 
 import SwiftUI
 import BackgroundTasks
+import CloudKit
 
 @main
 struct kopi_iosApp: App {
     let persistenceController = PersistenceController.shared
     @StateObject private var clipboardService = ClipboardService()
+    @StateObject private var cloudKitManager = CloudKitManager.shared
 
     var body: some Scene {
         WindowGroup {
             ContentView()
                 .environment(\.managedObjectContext, persistenceController.container.viewContext)
                 .environmentObject(clipboardService)
+                .environmentObject(cloudKitManager)
                 .onReceive(NotificationCenter.default.publisher(for: UIApplication.didFinishLaunchingNotification)) { _ in
-                    // Register background tasks on app launch
+                    // Phase 4: Initialize iPhone Sync Client
                     registerBackgroundTasks()
+                    
+                    // Initialize CloudKit subscriptions and perform initial sync
+                    Task {
+                        try? await cloudKitManager.subscribeToChanges()
+                        print("📱 [iPhone Sync Client] App launched - starting initial sync")
+                    }
                 }
         }
     }

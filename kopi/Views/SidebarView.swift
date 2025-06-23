@@ -35,7 +35,7 @@ struct SidebarView: View {
                     if count > 0 {
                         SidebarItemView(
                             filter: .contentType(contentType),
-                            icon: contentType.systemImage,
+                            icon: contentType.systemImageName,
                             title: contentType.displayName,
                             count: count,
                             isSelected: selectedFilter == .contentType(contentType)
@@ -177,5 +177,21 @@ struct AppInfo {
         self.name = name
         self.iconData = iconData
         self.itemCount = itemCount
+    }
+}
+
+// MARK: - Phase 3: Relay Statistics Model
+
+struct RelayStatistics {
+    let totalItems: Int
+    let relayedItems: Int
+    let localItems: Int
+    let relayPercentage: Double
+    
+    init(totalItems: Int, relayedItems: Int, localItems: Int, relayPercentage: Double) {
+        self.totalItems = totalItems
+        self.relayedItems = relayedItems
+        self.localItems = localItems
+        self.relayPercentage = relayPercentage
     }
 } 

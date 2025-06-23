@@ -53,6 +53,7 @@ struct ClipboardItemCard: View {
         case .text: return "Text"
         case .url: return "Link"
         case .image: return "Image"
+        case .file: return "File"
         }
     }
     
@@ -68,7 +69,7 @@ struct ClipboardItemCard: View {
                     
                     Spacer()
                     
-                    Text(formatTimestamp(item.timestamp ?? Date()))
+                    Text(formatTimestamp(item.createdAt ?? Date()))
                         .font(.subheadline)
                         .foregroundColor(.secondary)
                 }
@@ -89,6 +90,19 @@ struct ClipboardItemCard: View {
                 case .url:
                     LinkPreviewCard(url: content)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    
+                case .file:
+                    VStack(alignment: .leading, spacing: 8) {
+                        Image(systemName: "doc.fill")
+                            .font(.title2)
+                            .foregroundColor(.blue)
+                        Text(content)
+                            .font(.body)
+                            .foregroundColor(.primary)
+                            .lineLimit(3)
+                            .multilineTextAlignment(.leading)
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                     
                 case .image:
                     // Show actual image
@@ -183,13 +197,16 @@ struct ClipboardItemCard: View {
 }
 
 #Preview {
-    // Create a sample ClipboardItem for preview
-    let context = PersistenceController.preview.container.viewContext
-    let sampleItem = ClipboardItem(context: context)
-    sampleItem.content = "This is a sample text content for the clipboard item card preview."
-    sampleItem.contentType = "text"
-    sampleItem.timestamp = Date()
+    @MainActor func createPreview() -> some View {
+        let context = PersistenceController.preview.container.viewContext
+        let sampleItem = ClipboardItem(context: context)
+        sampleItem.content = "This is a sample text content for the clipboard item card preview."
+        sampleItem.contentType = "text"
+        sampleItem.createdAt = Date()
+        
+        return ClipboardItemCard(item: sampleItem, isLarge: false, isSelectionMode: true, isSelected: true)
+            .environment(\.managedObjectContext, context)
+    }
     
-    return ClipboardItemCard(item: sampleItem, isLarge: false, isSelectionMode: true, isSelected: true)
-        .environment(\.managedObjectContext, context)
+    return createPreview()
 } 

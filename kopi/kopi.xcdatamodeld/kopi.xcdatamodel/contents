@@ -4,16 +4,16 @@
         <attribute name="id" optional="YES" attributeType="UUID" usesScalarValueType="NO"/>
         <attribute name="content" optional="YES" attributeType="String"/>
         <attribute name="contentType" optional="YES" attributeType="String"/>
-        <attribute name="contentPreview" optional="YES" attributeType="String"/>
-        <attribute name="timestamp" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
-        <attribute name="isPinned" attributeType="Boolean" defaultValueString="NO" usesScalarValueType="YES"/>
-        <attribute name="deviceOrigin" optional="YES" attributeType="String"/>
-        <attribute name="sourceApp" optional="YES" attributeType="String"/>
+        <attribute name="contentHash" optional="YES" attributeType="String"/>
+        <attribute name="createdAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+        <attribute name="createdOnDevice" optional="YES" attributeType="String"/>
+        <attribute name="relayedBy" optional="YES" attributeType="String"/>
+        <attribute name="sourceAppBundleID" optional="YES" attributeType="String"/>
         <attribute name="sourceAppName" optional="YES" attributeType="String"/>
         <attribute name="sourceAppIcon" optional="YES" attributeType="Binary"/>
-        <attribute name="fileSize" attributeType="Integer 64" defaultValueString="0" usesScalarValueType="YES"/>
-        <attribute name="isTransient" attributeType="Boolean" defaultValueString="NO" usesScalarValueType="YES"/>
-        <attribute name="isSensitive" attributeType="Boolean" defaultValueString="NO" usesScalarValueType="YES"/>
+        <attribute name="markedAsDeleted" attributeType="Boolean" defaultValueString="NO" usesScalarValueType="YES"/>
+        <attribute name="lastModified" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+        <attribute name="iCloudSyncStatus" optional="YES" attributeType="String"/>
     </entity>
     <elements>
         <element name="ClipboardItem" positionX="-63" positionY="-18" width="128" height="224"/>

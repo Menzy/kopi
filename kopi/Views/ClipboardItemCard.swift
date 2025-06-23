@@ -46,7 +46,7 @@ struct ClipboardItemCard: View {
                 Spacer()
                 
                 // Timestamp
-                if let timestamp = item.timestamp {
+                if let timestamp = item.createdAt {
                     Text(timeAgoString(from: timestamp))
                         .font(.caption)
                         .foregroundColor(.secondary)
@@ -104,6 +104,17 @@ struct ClipboardItemCard: View {
                                     .foregroundColor(.secondary)
                                 Spacer()
                             }
+                        }
+                        
+                    case .file:
+                        HStack {
+                            Image(systemName: "doc.fill")
+                                .foregroundColor(.blue)
+                                .font(.title3)
+                            Text("File")
+                                .font(.caption)
+                                .foregroundColor(.primary)
+                            Spacer()
                         }
                     }
                 }
@@ -164,6 +175,16 @@ struct ClipboardItemCard: View {
                                     .font(.caption)
                                     .foregroundColor(.secondary)
                             }
+                        }
+                        
+                    case .file:
+                        HStack(spacing: 4) {
+                            Image(systemName: "doc")
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                            Text("File")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
                         }
                     }
                 }
@@ -290,14 +311,18 @@ struct ContentTypeBadge: View {
 }
 
 #Preview {
-    let item = ClipboardItem()
-    item.content = "Hello, World! This is a sample clipboard item for testing the preview functionality."
-    item.contentType = ContentType.text.rawValue
-    item.timestamp = Date()
-    item.sourceAppName = "Xcode"
+    @MainActor
+    func createPreviewItem() -> ClipboardItem {
+        let item = ClipboardItem()
+        item.content = "Hello, World! This is a sample clipboard item for testing the preview functionality."
+        item.contentType = ContentType.text.rawValue
+        item.createdAt = Date()
+        item.sourceAppName = "Xcode"
+        return item
+    }
     
     return ClipboardItemCard(
-        item: item,
+        item: createPreviewItem(),
         isSelected: false,
         cardSize: 200,
         onCopy: {},

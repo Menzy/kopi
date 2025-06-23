@@ -95,6 +95,8 @@ struct ClipboardPreviewPopover: View {
             return "URL Preview"
         case .image:
             return "Image Preview"
+        case .file:
+            return "File Preview"
         }
     }
     
@@ -192,6 +194,22 @@ struct ClipboardPreviewPopover: View {
                         }
                     }
                 }
+                
+            case .file:
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        Image(systemName: "doc.fill")
+                            .foregroundColor(.blue)
+                        Text(content)
+                            .font(.caption)
+                            .foregroundColor(.primary)
+                            .textSelection(.enabled)
+                        Spacer()
+                    }
+                    .padding(8)
+                    .background(Color(NSColor.controlBackgroundColor).opacity(0.5))
+                    .cornerRadius(6)
+                }
             }
         } else {
             HStack {
@@ -219,7 +237,7 @@ struct ClipboardPreviewPopover: View {
             ClipboardMonitor.shared.notifyAppCopiedToClipboard(content: content)
             
             switch contentType {
-            case .text, .url:
+            case .text, .url, .file:
                 pasteboard.setString(content, forType: .string)
             case .image:
                 // Handle image data copying - content is base64 encoded

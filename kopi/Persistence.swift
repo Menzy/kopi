@@ -28,13 +28,13 @@ struct PersistenceController {
             item.id = UUID()
             item.content = content
             item.contentType = type.rawValue
-            item.contentPreview = content.count > 50 ? String(content.prefix(50)) + "..." : content
-            item.timestamp = Date().addingTimeInterval(-Double.random(in: 0...3600))
-            item.deviceOrigin = "macOS"
+            // contentPreview removed in new schema
+            item.createdAt = Date().addingTimeInterval(-Double.random(in: 0...3600))
+            item.createdOnDevice = ContentHashingUtility.getDeviceIdentifier()
 
-            item.isTransient = false
-            item.isSensitive = false
-            item.fileSize = Int64(content.data(using: .utf8)?.count ?? 0)
+            item.markedAsDeleted = false
+            // isSensitive removed in new schema
+            // fileSize removed in new schema
         }
         
         do {

@@ -23,7 +23,7 @@ struct ClipboardHistoryView: View {
     @State private var selectedItems: Set<NSManagedObjectID> = []
 
     @FetchRequest(
-        sortDescriptors: [NSSortDescriptor(keyPath: \ClipboardItem.timestamp, ascending: false)],
+        sortDescriptors: [NSSortDescriptor(keyPath: \ClipboardItem.createdAt, ascending: false)],
         animation: .default)
     private var clipboardItems: FetchedResults<ClipboardItem>
 
@@ -41,6 +41,35 @@ struct ClipboardHistoryView: View {
     var body: some View {
         NavigationView {
             VStack(spacing: 0) {
+                // Phase 4: Sync status indicator
+                HStack {
+                    HStack {
+                        Circle()
+                            .fill(syncStatusColor)
+                            .frame(width: 8, height: 8)
+                        Text(syncStatusText)
+                            .font(.caption)
+                            .foregroundColor(syncStatusColor)
+                    }
+                    
+                    Spacer()
+                    
+                    if let lastSync = clipboardService.lastSyncTime {
+                        Text("Last sync: \(formatSyncTime(lastSync))")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                    }
+                    
+                    Button(action: {
+                        clipboardService.forceSyncFromCloud()
+                    }) {
+                        Image(systemName: "arrow.clockwise")
+                            .font(.caption)
+                    }
+                }
+                .padding(.horizontal, 16)
+                .padding(.bottom, 8)
+                
                 // Search bar
                 HStack {
                     HStack {
@@ -173,10 +202,42 @@ struct ClipboardHistoryView: View {
         return contentType == .url || (contentType == .text && index % 3 == 0)
     }
     
-    private func copyItem(_ item: ClipboardItem) {
-        if let content = item.content {
-            UIPasteboard.general.string = content
+    // Phase 5: Enhanced sync status UI helpers
+    private var syncStatusColor: Color {
+        switch clipboardService.syncStatus {
+        case "Synced":
+            return .green
+        case "Syncing...":
+            return .orange
+        case "Sync Failed":
+            return .red
+        case "Offline":
+            return .orange
+        default:
+            return .gray
         }
+    }
+    
+    private var syncStatusText: String {
+        let cloudKitManager = CloudKitManager.shared
+        let queueStatus = cloudKitManager.getOfflineQueueStatus()
+        
+        if queueStatus.count > 0 {
+            return "\(clipboardService.syncStatus) (\(queueStatus.count) queued)"
+        } else {
+            return clipboardService.syncStatus
+        }
+    }
+    
+    private func formatSyncTime(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.timeStyle = .short
+        return formatter.string(from: date)
+    }
+    
+    private func copyItem(_ item: ClipboardItem) {
+        // Phase 4: Use ClipboardService method which handles tracking
+        clipboardService.copyToClipboard(item)
     }
 
     private func deleteItem(_ item: ClipboardItem) {

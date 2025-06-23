@@ -10,39 +10,59 @@ import SwiftUI
 
 enum ContentType: String, CaseIterable {
     case text = "text"
-    case url = "url"
     case image = "image"
+    case url = "url"
+    case file = "file"
     
     var displayName: String {
         switch self {
-        case .text:
-            return "Text"
-        case .url:
-            return "URL"
-        case .image:
-            return "Image"
+        case .text: return "Text"
+        case .image: return "Image"
+        case .url: return "Link"
+        case .file: return "File"
         }
     }
     
-    var systemImage: String {
+    var systemImageName: String {
         switch self {
-        case .text:
-            return "doc.text"
-        case .url:
-            return "link"
-        case .image:
-            return "photo"
+        case .text: return "doc.text"
+        case .image: return "photo"
+        case .url: return "link"
+        case .file: return "doc"
         }
     }
     
     var color: Color {
         switch self {
-        case .text:
-            return .blue
-        case .url:
-            return .green
-        case .image:
-            return .purple
+        case .text: return .blue
+        case .image: return .purple
+        case .url: return .green
+        case .file: return .gray
+        }
+    }
+}
+
+enum SyncStatus: String, CaseIterable {
+    case local = "local"
+    case syncing = "syncing"
+    case synced = "synced"
+    case failed = "failed"
+    
+    var displayName: String {
+        switch self {
+        case .local: return "Local"
+        case .syncing: return "Syncing"
+        case .synced: return "Synced"
+        case .failed: return "Failed"
+        }
+    }
+    
+    var systemImageName: String {
+        switch self {
+        case .local: return "iphone"
+        case .syncing: return "arrow.triangle.2.circlepath"
+        case .synced: return "checkmark.icloud"
+        case .failed: return "exclamationmark.icloud"
         }
     }
 } 

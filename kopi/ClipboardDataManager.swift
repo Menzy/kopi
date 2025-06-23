@@ -14,12 +14,15 @@ class ClipboardDataManager: ObservableObject {
     static let shared = ClipboardDataManager()
     
     private let persistenceController = PersistenceController.shared
+    let cloudKitManager: CloudKitManager
     
     private var viewContext: NSManagedObjectContext {
         persistenceController.container.viewContext
     }
     
-    private init() {}
+    private init() {
+        cloudKitManager = CloudKitManager.shared
+    }
     
     // MARK: - CRUD Operations
     
@@ -34,29 +37,41 @@ class ClipboardDataManager: ObservableObject {
         item.id = UUID()
         item.content = content
         item.contentType = contentType.rawValue
-        item.contentPreview = createPreview(from: content, type: contentType)
-        item.timestamp = Date()
-        item.deviceOrigin = getDeviceIdentifier()
-        item.sourceApp = sourceApp
+        // contentPreview removed in new schema
+        item.createdAt = Date()
+        item.lastModified = Date()
+        item.contentHash = ContentHashingUtility.generateContentHash(from: content)
+        item.iCloudSyncStatus = SyncStatus.local.rawValue
+        item.createdOnDevice = ContentHashingUtility.getDeviceIdentifier()
+        item.sourceAppBundleID = sourceApp
         item.sourceAppName = sourceAppName
         item.sourceAppIcon = sourceAppIcon
-        item.fileSize = Int64(content.data(using: .utf8)?.count ?? 0)
+        // fileSize removed in new schema
 
-        item.isTransient = false
-        item.isSensitive = false
+        item.markedAsDeleted = false
+        // isSensitive removed in new schema
         
         let itemId = item.id?.uuidString ?? "unknown"
         print("➕ [macOS] Creating clipboard item: \(itemId) - \(content.prefix(50))")
         
         saveContext()
         
-        print("✅ [macOS] Item saved to CloudKit: \(itemId)")
+        // MacBook acts as relay - push to CloudKit immediately
+        Task {
+            do {
+                try await cloudKitManager.pushItem(item)
+                print("✅ [MacBook Relay] Item pushed to iCloud: \(itemId)")
+            } catch {
+                print("❌ [MacBook Relay] Failed to push to iCloud: \(error)")
+            }
+        }
+        
         return item
     }
     
     func fetchAllClipboardItems() -> [ClipboardItem] {
         let request: NSFetchRequest<ClipboardItem> = ClipboardItem.fetchRequest()
-        request.sortDescriptors = [NSSortDescriptor(keyPath: \ClipboardItem.timestamp, ascending: false)]
+        request.sortDescriptors = [NSSortDescriptor(keyPath: \ClipboardItem.createdAt, ascending: false)]
         
         do {
             return try viewContext.fetch(request)
@@ -68,9 +83,9 @@ class ClipboardDataManager: ObservableObject {
     
     func fetchRecentClipboardItems(limit: Int = 50) -> [ClipboardItem] {
         let request: NSFetchRequest<ClipboardItem> = ClipboardItem.fetchRequest()
-        request.sortDescriptors = [NSSortDescriptor(keyPath: \ClipboardItem.timestamp, ascending: false)]
+        request.sortDescriptors = [NSSortDescriptor(keyPath: \ClipboardItem.createdAt, ascending: false)]
         request.fetchLimit = limit
-        request.predicate = NSPredicate(format: "isTransient == NO")
+        request.predicate = NSPredicate(format: "markedAsDeleted == NO")
         
         do {
             return try viewContext.fetch(request)
@@ -85,37 +100,68 @@ class ClipboardDataManager: ObservableObject {
         let content = item.content?.prefix(50) ?? "no content"
         print("🗑️ [macOS] Deleting clipboard item: \(itemId) - \(content)")
         
+        // Soft delete in CloudKit (mark as deleted)
+        item.markedAsDeleted = true
+        item.lastModified = Date()
+        
+        // Push the deletion to CloudKit first
+        Task {
+            do {
+                try await cloudKitManager.pushItem(item)
+                print("✅ [MacBook Relay] Deletion synced to iCloud: \(itemId)")
+            } catch {
+                print("❌ [MacBook Relay] Failed to sync deletion: \(error)")
+            }
+        }
+        
+        // Then delete locally
         viewContext.delete(item)
         saveContext()
-        
-        print("✅ [macOS] Deletion saved to CloudKit for item: \(itemId)")
     }
     
     func deleteClipboardItems(_ items: [ClipboardItem]) {
         print("🗑️ [macOS] Batch deleting \(items.count) clipboard items")
         
+        // First mark all as deleted and sync to CloudKit
         for item in items {
             let itemId = item.id?.uuidString ?? "unknown"
             let content = item.content?.prefix(30) ?? "no content"
             print("   - Deleting: \(itemId) - \(content)")
+            
+            item.markedAsDeleted = true
+            item.lastModified = Date()
+            
+            // Sync to CloudKit
+            Task {
+                do {
+                    try await cloudKitManager.pushItem(item)
+                    print("     ✅ [MacBook Relay] Deletion synced: \(itemId)")
+                } catch {
+                    print("     ❌ [MacBook Relay] Failed to sync deletion: \(error)")
+                }
+            }
+        }
+        
+        // Then delete locally
+        for item in items {
             viewContext.delete(item)
         }
         saveContext()
         
-        print("✅ [macOS] Batch deletion saved to CloudKit for \(items.count) items")
+        print("✅ [macOS] Batch deletion completed for \(items.count) items")
     }
     
 
     
     func markAsSensitive(_ item: ClipboardItem) {
-        item.isSensitive = true
+        // isSensitive removed in new schema - functionality deprecated
         saveContext()
     }
     
     func updateClipboardItem(_ item: ClipboardItem, content: String) {
         item.content = content
-        item.contentPreview = createPreview(from: content, type: ContentType(rawValue: item.contentType ?? "text") ?? .text)
-        item.fileSize = Int64(content.data(using: .utf8)?.count ?? 0)
+        // contentPreview removed in new schema
+        // fileSize removed in new schema
         saveContext()
     }
     
@@ -123,8 +169,8 @@ class ClipboardDataManager: ObservableObject {
     
     func getRecentItems(limit: Int = 50) -> [ClipboardItem] {
         let request: NSFetchRequest<ClipboardItem> = ClipboardItem.fetchRequest()
-        request.predicate = NSPredicate(format: "isTransient == NO")
-        request.sortDescriptors = [NSSortDescriptor(keyPath: \ClipboardItem.timestamp, ascending: false)]
+        request.predicate = NSPredicate(format: "markedAsDeleted == NO")
+        request.sortDescriptors = [NSSortDescriptor(keyPath: \ClipboardItem.createdAt, ascending: false)]
         request.fetchLimit = limit
         
         do {
@@ -137,7 +183,7 @@ class ClipboardDataManager: ObservableObject {
     
     func getAvailableApps() -> [String] {
         let request: NSFetchRequest<NSFetchRequestResult> = ClipboardItem.fetchRequest()
-        request.predicate = NSPredicate(format: "isTransient == NO AND sourceAppName != nil")
+        request.predicate = NSPredicate(format: "markedAsDeleted == NO AND sourceAppName != nil")
         request.resultType = .dictionaryResultType
         request.propertiesToFetch = ["sourceAppName"]
         request.returnsDistinctResults = true
@@ -159,7 +205,7 @@ class ClipboardDataManager: ObservableObject {
     ) -> [ClipboardItem] {
         let request: NSFetchRequest<ClipboardItem> = ClipboardItem.fetchRequest()
         
-        var predicates: [NSPredicate] = [NSPredicate(format: "isTransient == NO")]
+        var predicates: [NSPredicate] = [NSPredicate(format: "markedAsDeleted == NO")]
         
         // Search text
         if let searchText = searchText, !searchText.isEmpty {
@@ -181,7 +227,7 @@ class ClipboardDataManager: ObservableObject {
         request.predicate = NSCompoundPredicate(andPredicateWithSubpredicates: predicates)
         
         // Always sort by newest first
-        request.sortDescriptors = [NSSortDescriptor(keyPath: \ClipboardItem.timestamp, ascending: false)]
+        request.sortDescriptors = [NSSortDescriptor(keyPath: \ClipboardItem.createdAt, ascending: false)]
         
         do {
             return try viewContext.fetch(request)
@@ -202,7 +248,7 @@ class ClipboardDataManager: ObservableObject {
         
         // Set content based on type
         switch ContentType(rawValue: item.contentType ?? "text") ?? .text {
-        case .text, .url:
+        case .text, .url, .file:
             pasteboard.setString(content, forType: .string)
         case .image:
             // Handle base64 encoded image data
@@ -217,18 +263,63 @@ class ClipboardDataManager: ObservableObject {
         print("📋 Copied to clipboard: \(content.prefix(50))...")
     }
     
+    // MARK: - Phase 3: Relay System Methods
+    
+    func getRelayedItems() -> [ClipboardItem] {
+        let request: NSFetchRequest<ClipboardItem> = ClipboardItem.fetchRequest()
+        request.predicate = NSPredicate(format: "markedAsDeleted == NO AND relayedBy != nil")
+        request.sortDescriptors = [NSSortDescriptor(keyPath: \ClipboardItem.createdAt, ascending: false)]
+        
+        do {
+            let items = try viewContext.fetch(request)
+            print("📊 [MacBook Relay] Found \(items.count) relayed items")
+            return items
+        } catch {
+            print("❌ Failed to fetch relayed items: \(error)")
+            return []
+        }
+    }
+    
+    func getLocalItems() -> [ClipboardItem] {
+        let request: NSFetchRequest<ClipboardItem> = ClipboardItem.fetchRequest()
+        request.predicate = NSPredicate(format: "markedAsDeleted == NO AND relayedBy == nil")
+        request.sortDescriptors = [NSSortDescriptor(keyPath: \ClipboardItem.createdAt, ascending: false)]
+        
+        do {
+            let items = try viewContext.fetch(request)
+            print("📊 [MacBook Relay] Found \(items.count) local items")
+            return items
+        } catch {
+            print("❌ Failed to fetch local items: \(error)")
+            return []
+        }
+    }
+    
+    func getRelayStatistics() -> RelayStatistics {
+        let totalItems = getRecentItems(limit: 1000).count
+        let relayedItems = getRelayedItems().count
+        let localItems = getLocalItems().count
+        
+        return RelayStatistics(
+            totalItems: totalItems,
+            relayedItems: relayedItems,
+            localItems: localItems,
+            relayPercentage: totalItems > 0 ? Double(relayedItems) / Double(totalItems) * 100 : 0
+        )
+    }
+    
     // MARK: - App Statistics
     
     func getAppStatistics() -> [AppInfo] {
         let request: NSFetchRequest<ClipboardItem> = ClipboardItem.fetchRequest()
-        request.predicate = NSPredicate(format: "isTransient == NO")
+        request.predicate = NSPredicate(format: "markedAsDeleted == NO")
         
         do {
             let items = try viewContext.fetch(request)
             
             // Group by bundle ID and count items
             let groupedItems = Dictionary(grouping: items) { item in
-                item.sourceApp ?? "unknown"
+                item.sourceAppBundleID ?? "unknown"
             }
             
             let appInfos = groupedItems.compactMap { (bundleID, items) -> AppInfo? in
@@ -251,7 +342,7 @@ class ClipboardDataManager: ObservableObject {
     
     func getTotalItemCount() -> Int {
         let request: NSFetchRequest<ClipboardItem> = ClipboardItem.fetchRequest()
-        request.predicate = NSPredicate(format: "isTransient == NO")
+        request.predicate = NSPredicate(format: "markedAsDeleted == NO")
         
         do {
             return try viewContext.count(for: request)
@@ -263,7 +354,7 @@ class ClipboardDataManager: ObservableObject {
     
     // MARK: - Helper Methods
     
-    private func saveContext() {
+    func saveContext() {
         do {
             try viewContext.save()
         } catch {

@@ -27,12 +27,13 @@ struct PersistenceController {
             item.id = UUID()
             item.content = content
             item.contentType = type.rawValue
-            item.contentPreview = content.count > 50 ? String(content.prefix(50)) + "..." : content
-            item.timestamp = Date().addingTimeInterval(-Double.random(in: 0...3600))
-            item.deviceOrigin = "iOS"
-            item.isTransient = false
-            item.isSensitive = false
-            item.fileSize = Int64(content.data(using: .utf8)?.count ?? 0)
+            item.createdAt = Date().addingTimeInterval(-Double.random(in: 0...3600))
+            item.lastModified = Date()
+            item.createdOnDevice = "iOS"
+            item.markedAsDeleted = false
+            item.contentHash = ContentHashingUtility.generateContentHash(from: content)
+            item.iCloudSyncStatus = SyncStatus.local.rawValue
+            item.sourceAppName = "Preview"
         }
         
         do {

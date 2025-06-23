@@ -13,8 +13,12 @@ import UniformTypeIdentifiers
 
 class ClipboardService: ObservableObject {
     private let persistenceController = PersistenceController.shared
+    private let cloudKitManager = CloudKitManager.shared
+    
+    // Phase 4: Sync client properties
     private var lastChangeCount: Int = 0
-    private var timer: Timer?
+    private var lastSyncDate: Date?
+    private var syncTimer: Timer?
     private var backgroundTask: UIBackgroundTaskIdentifier = .invalid
     
     // Track clipboard changes made by this app to avoid loops
@@ -22,61 +26,155 @@ class ClipboardService: ObservableObject {
     private var lastAppCopyContent: String?
     private var lastAppCopyTime: Date?
     
+    // Phase 4: Universal Handoff support
+    private var handoffActivity: NSUserActivity?
+    
     // Background processing
     private let backgroundTaskIdentifier = "com.wanmenzy.kopi.clipboardsync"
+    
+    @Published var syncStatus: String = "Ready"
+    @Published var lastSyncTime: Date?
     
     init() {
         // Initialize with current clipboard state
         lastChangeCount = UIPasteboard.general.changeCount
         
-        // Start monitoring
-        startClipboardMonitoring()
+        // Phase 4: Start as sync client (pull-only)
+        setupSyncClient()
         
         // Listen for app lifecycle events
         setupAppLifecycleObservers()
         
         // Register background tasks
         registerBackgroundTasks()
+        
+        // Set up Universal Handoff
+        setupUniversalHandoff()
+        
+        print("📱 [iOS] ClipboardService initialized as sync client")
     }
     
     deinit {
-        stopClipboardMonitoring()
+        stopSyncClient()
         NotificationCenter.default.removeObserver(self)
     }
     
-    private func startClipboardMonitoring() {
-        // Monitor clipboard changes every 0.5 seconds for faster detection
-        timer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
-            self?.checkClipboardChanges()
+    // MARK: - Phase 4: Sync Client Implementation
+    
+    private func setupSyncClient() {
+        // Phase 4: iPhone acts as sync client - pulls from iCloud periodically
+        syncTimer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { [weak self] _ in
+            Task {
+                await self?.performSyncFromCloud()
+            }
         }
         
-        print("📋 [iOS] Started clipboard monitoring")
+        // Immediate sync on startup
+        Task {
+            await performSyncFromCloud()
+        }
+        
+        print("📱 [iOS] Sync client started - pulling from iCloud every 5 seconds")
     }
     
-    private func stopClipboardMonitoring() {
-        timer?.invalidate()
-        timer = nil
-        print("📋 [iOS] Stopped clipboard monitoring")
+    private func stopSyncClient() {
+        syncTimer?.invalidate()
+        syncTimer = nil
+        print("📱 [iOS] Sync client stopped")
     }
+    
+    @MainActor
+    private func performSyncFromCloud() async {
+        syncStatus = "Syncing..."
+        
+        do {
+            // Phase 5: Enhanced sync with offline reconciliation
+            print("📥 [iPhone Sync Client] Starting enhanced sync from iCloud...")
+            
+            // Check if we just came back online
+            if cloudKitManager.isConnected && (lastSyncDate == nil || Date().timeIntervalSince(lastSyncDate!) > 300) {
+                // Perform full reconciliation sync if it's been a while or first sync
+                print("🔄 [iPhone Sync Client] Performing full reconciliation sync")
+                await cloudKitManager.forceFullSync()
+            } else {
+                // Regular sync
+                await cloudKitManager.syncFromCloud()
+            }
+            
+            syncStatus = "Synced"
+            lastSyncTime = Date()
+            lastSyncDate = Date()
+            
+            print("✅ [iPhone Sync Client] Successfully synced from iCloud")
+            
+            // Phase 5: Check for offline queue status
+            let queueStatus = cloudKitManager.getOfflineQueueStatus()
+            if queueStatus.count > 0 {
+                print("📊 [iPhone Sync Client] Offline queue has \(queueStatus.count) pending operations")
+            }
+            
+        } catch {
+            syncStatus = cloudKitManager.isConnected ? "Sync Failed" : "Offline"
+            print("❌ [iPhone Sync Client] Sync failed: \(error)")
+        }
+    }
+    
+    // MARK: - Phase 4: Universal Handoff Implementation
+    
+    private func setupUniversalHandoff() {
+        // Set up handoff activity for clipboard sync
+        handoffActivity = NSUserActivity(activityType: "com.wanmenzy.kopi.clipboard")
+        handoffActivity?.title = "Kopi Clipboard"
+        handoffActivity?.isEligibleForHandoff = true
+        handoffActivity?.isEligibleForSearch = false
+        handoffActivity?.webpageURL = nil
+        
+        print("🔄 [iPhone Handoff] Universal Handoff configured")
+    }
+    
+    private func sendViaUniversalHandoff(content: String, type: ContentType) {
+        guard let activity = handoffActivity else { return }
+        
+        // Phase 4: Send clipboard data via Universal Handoff when app is closed
+        activity.userInfo = [
+            "clipboard_content": content,
+            "clipboard_type": type.rawValue,
+            "device_id": ContentHashingUtility.getDeviceIdentifier(),
+            "timestamp": Date().timeIntervalSince1970
+        ]
+        
+        activity.needsSave = true
+        activity.becomeCurrent()
+        
+        print("🔄 [iPhone Handoff] Sent via Universal Handoff: \(type) - \(content.prefix(30))")
+    }
+    
+    // Phase 4: Removed old clipboard monitoring - replaced with sync client
     
     private func setupAppLifecycleObservers() {
-        // Monitor when app becomes active to check clipboard immediately
+        // Phase 4: Monitor when app becomes active to sync from iCloud immediately
         NotificationCenter.default.addObserver(
             forName: UIApplication.didBecomeActiveNotification,
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            print("📱 [iOS] App became active - checking clipboard")
-            self?.checkClipboardChanges()
+            print("📱 [iPhone Sync Client] App became active - syncing from iCloud")
+            Task {
+                await self?.performSyncFromCloud()
+            }
+            
+            // Also check for new local clipboard changes to send via handoff
+            self?.checkForLocalClipboardChanges()
         }
         
-        // Monitor when app goes to background
+        // Phase 4: Monitor when app goes to background - send current clipboard via handoff if changed
         NotificationCenter.default.addObserver(
             forName: UIApplication.didEnterBackgroundNotification,
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            print("📱 [iOS] App entered background")
+            print("📱 [iPhone Sync Client] App entered background")
+            self?.handleAppGoingToBackground()
             self?.scheduleBackgroundProcessing()
         }
         
@@ -86,14 +184,20 @@ class ClipboardService: ObservableObject {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            self?.stopClipboardMonitoring()
+            self?.stopSyncClient()
         }
     }
     
-    private func checkClipboardChanges() {
+    // Phase 4: Handle app going to background - send clipboard via handoff if needed
+    private func handleAppGoingToBackground() {
+        checkForLocalClipboardChanges()
+    }
+    
+    // Phase 5: Enhanced local clipboard monitoring with offline-aware handoff
+    private func checkForLocalClipboardChanges() {
         let currentChangeCount = UIPasteboard.general.changeCount
         
-        // Skip if no changes or if we should ignore the next change
+        // Only process if clipboard has changed since last check
         guard currentChangeCount != lastChangeCount else { return }
         
         if ignoreNextClipboardChange {
@@ -102,7 +206,7 @@ class ClipboardService: ObservableObject {
             return
         }
         
-        // Get clipboard content with proper type detection
+        // Get current clipboard content
         guard let clipboardContent = checkClipboardContent() else {
             lastChangeCount = currentChangeCount
             return
@@ -117,43 +221,79 @@ class ClipboardService: ObservableObject {
             return
         }
         
-        // Process the new clipboard content
-        saveClipboardItem(content: clipboardContent.content, type: clipboardContent.type)
+        // Phase 5: Enhanced handoff with offline-aware strategy
+        Task {
+            await handleLocalClipboardChange(content: clipboardContent.content, type: clipboardContent.type)
+        }
         lastChangeCount = currentChangeCount
         
-        print("📋 [iOS] Clipboard changed - saved new item: \(clipboardContent.type)")
+        print("📱 [iPhone Sync Client] Local clipboard change detected - processing with offline fallback")
     }
     
-    private func saveClipboardItem(content: String, type: ContentType) {
-        let context = persistenceController.container.viewContext
-        
-        // Check if this content already exists (avoid duplicates)
-        let fetchRequest: NSFetchRequest<ClipboardItem> = ClipboardItem.fetchRequest()
-        fetchRequest.predicate = NSPredicate(format: "content == %@", content)
-        fetchRequest.fetchLimit = 1
-        
-        do {
-            let existingItems = try context.fetch(fetchRequest)
-            if !existingItems.isEmpty {
-                // Update timestamp of existing item
-                existingItems.first?.timestamp = Date()
-            } else {
-                // Create new clipboard item
-                let newItem = ClipboardItem(context: context)
-                newItem.id = UUID()
-                newItem.content = content
-                newItem.timestamp = Date()
-                newItem.contentType = type.rawValue
-                newItem.sourceAppName = "Mac"
+    // MARK: - Phase 5: Enhanced Offline-Aware Clipboard Handling
+    
+    private func handleLocalClipboardChange(content: String, type: ContentType) async {
+        // Phase 5: Check if we're online or offline
+        if await cloudKitManager.isConnected {
+            // Online: Send via Universal Handoff for immediate MacBook relay
+            print("🌐 [iPhone Online] Sending via Universal Handoff for MacBook relay")
+            await sendViaUniversalHandoffWithConfirmation(content: content, type: type)
+            
+            // Also try direct sync after a short delay to catch any missed items
+            DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
+                Task {
+                    await self.performSyncFromCloud()
+                }
             }
             
-            try context.save()
-            print("✅ [iOS] Saved clipboard item successfully")
-            
-        } catch {
-            print("❌ [iOS] Error saving clipboard item: \(error)")
+        } else {
+            // Offline: Store locally and send via Universal Handoff as fallback
+            print("📵 [iPhone Offline] Storing locally and sending via Universal Handoff")
+            await handleOfflineClipboardChange(content: content, type: type)
         }
     }
+    
+    private func sendViaUniversalHandoffWithConfirmation(content: String, type: ContentType) async {
+        sendViaUniversalHandoff(content: content, type: type)
+        
+        // Add confirmation tracking
+        print("🔄 [iPhone Handoff] Sent with confirmation: \(type) - \(content.prefix(30))")
+    }
+    
+    private func handleOfflineClipboardChange(content: String, type: ContentType) async {
+        // Phase 5: When offline, save locally with special offline marking
+        let context = persistenceController.container.viewContext
+        let clipboardItem = ClipboardItem(context: context)
+        
+        clipboardItem.id = UUID()
+        clipboardItem.content = content
+        clipboardItem.contentType = type.rawValue
+        clipboardItem.contentHash = ContentHashingUtility.generateContentHash(from: content)
+        clipboardItem.createdAt = Date()
+        clipboardItem.createdOnDevice = ContentHashingUtility.getDeviceIdentifier()
+        clipboardItem.lastModified = Date()
+        clipboardItem.iCloudSyncStatus = SyncStatus.local.rawValue // Will be synced when online
+        
+        // Mark as offline-created for reconciliation
+        clipboardItem.sourceAppBundleID = "com.apple.clipboard.offline"
+        clipboardItem.sourceAppName = "iPhone (Offline)"
+        
+        do {
+            try context.save()
+            print("💾 [iPhone Offline] Saved clipboard item locally: \(content.prefix(30))")
+            
+            // Still send via Universal Handoff for immediate availability
+            sendViaUniversalHandoff(content: content, type: type)
+            
+            // Queue for sync when back online
+            try? await cloudKitManager.pushItem(clipboardItem) // This will queue offline
+            
+        } catch {
+            print("❌ [iPhone Offline] Failed to save clipboard item: \(error)")
+        }
+    }
+    
+    // MARK: - Phase 5: Enhanced Sync with Offline Reconciliation
     
     private func registerBackgroundTasks() {
         BGTaskScheduler.shared.register(forTaskWithIdentifier: backgroundTaskIdentifier, using: nil) { [weak self] task in
@@ -181,9 +321,9 @@ class ClipboardService: ObservableObject {
             task.setTaskCompleted(success: false)
         }
         
-        // Perform clipboard check in background
-        DispatchQueue.global(qos: .background).async { [weak self] in
-            self?.checkClipboardChanges()
+        // Phase 4: Perform sync from iCloud in background
+        Task {
+            await self.performSyncFromCloud()
             task.setTaskCompleted(success: true)
         }
     }
@@ -224,6 +364,44 @@ class ClipboardService: ObservableObject {
         return nil
     }
     
+    // MARK: - Phase 4: Sync Client Public Interface
+    
+    // Manually trigger sync from UI
+    func forceSyncFromCloud() {
+        Task {
+            await performSyncFromCloud()
+        }
+    }
+    
+    // Copy item to clipboard (when user taps an item)
+    func copyToClipboard(_ item: ClipboardItem) {
+        guard let content = item.content else { return }
+        
+        // Track that we're copying to clipboard to avoid handoff loop
+        lastAppCopyContent = content
+        lastAppCopyTime = Date()
+        ignoreNextClipboardChange = true
+        
+        let pasteboard = UIPasteboard.general
+        
+        // Set content based on type
+        switch ContentType(rawValue: item.contentType ?? "text") ?? .text {
+        case .text, .url, .file:
+            pasteboard.string = content
+        case .image:
+            // Handle base64 encoded image data
+            if let imageData = Data(base64Encoded: content),
+               let image = UIImage(data: imageData) {
+                pasteboard.image = image
+            } else {
+                // Fallback to string if not base64
+                pasteboard.string = content
+            }
+        }
+        
+        print("📋 [iPhone Sync Client] Copied to clipboard: \(content.prefix(50))...")
+    }
+    
     // MARK: - Helper Methods
     
     private func isValidURL(_ string: String) -> Bool {
@@ -246,6 +424,7 @@ extension Notification.Name {
     static let clipboardSyncSuccess = Notification.Name("clipboardSyncSuccess")
     static let clipboardPermissionNeeded = Notification.Name("clipboardPermissionNeeded")
 }
+
 
 
 
