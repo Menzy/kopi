@@ -199,6 +199,7 @@ class ClipboardMonitor: ObservableObject {
             } else {
                 // Detect source application for local clipboard changes
                 sourceAppInfo = self.sourceAppDetector.detectCurrentApp()
+                print("📱 [Local Clipboard] Source app detected: \(sourceAppInfo.name ?? "Unknown") (\(sourceAppInfo.bundleID ?? "no bundle ID"))")
             }
             
             // Check for privacy restrictions
@@ -309,43 +310,73 @@ class ClipboardMonitor: ObservableObject {
     // MARK: - Phase 3: Universal Handoff Detection
     
     private func isUniversalHandoffData() -> Bool {
-        // Check if clipboard change occurred within handoff detection window
+        // First check: Did we recently detect handoff activity?
         if let handoffTime = lastHandoffDetectionTime,
            Date().timeIntervalSince(handoffTime) <= handoffDetectionWindow {
-            return true
+            print("🔄 [HandoffDetection] Within handoff time window, checking heuristics...")
+            return detectHandoffHeuristics()
         }
         
-        // Additional heuristics for handoff detection
-        return detectHandoffHeuristics()
+        // Second check: Run heuristics anyway but be more strict
+        let isHandoff = detectHandoffHeuristics()
+        if isHandoff {
+            print("🔄 [HandoffDetection] Handoff detected via heuristics")
+        } else {
+            print("🔄 [HandoffDetection] Regular clipboard change - not handoff")
+        }
+        
+        return isHandoff
     }
     
     private func detectHandoffHeuristics() -> Bool {
         let pasteboard = NSPasteboard.general
         
-        // Check for handoff-specific pasteboard properties
-        // Universal Handoff often includes specific pasteboard types or metadata
+        // Get all pasteboard types for analysis
         let pasteboardTypes = pasteboard.types ?? []
+        print("🔍 [HandoffDetection] Pasteboard types: \(pasteboardTypes.map { $0.rawValue })")
         
-        // Look for handoff-specific types or patterns
+        // More specific handoff detection - these are the actual handoff types
         let handoffIndicators = [
-            "com.apple.handoff.clipboard",
-            "com.apple.uikit.pasteboard",
-            "public.utf8-plain-text" // with specific patterns
+            "com.apple.handoff.clipboard.data",
+            "com.apple.ios.pasteboard.handoff",
+            "com.apple.continuity.clipboard"
         ]
         
+        // Check for actual handoff-specific types (not general types)
         for type in pasteboardTypes {
             if handoffIndicators.contains(type.rawValue) {
+                print("🔄 [HandoffDetection] Found handoff indicator: \(type.rawValue)")
                 return true
             }
         }
         
-        // Check for timing patterns typical of handoff
-        let timeSinceLastChange = Date().timeIntervalSince(lastHandoffDetectionTime ?? Date.distantPast)
-        if timeSinceLastChange < 3.0 && timeSinceLastChange > 0.1 {
-            // If clipboard changed shortly after potential handoff preparation
+        // Check for iOS-specific pasteboard properties that indicate handoff
+        // Only if we have multiple specific iOS indicators together
+        let iosIndicators = [
+            "com.apple.uikit.pasteboard",
+            "public.utf8-plain-text"
+        ]
+        
+        let foundIosIndicators = pasteboardTypes.filter { type in
+            iosIndicators.contains(type.rawValue)
+        }
+        
+        // Only consider it handoff if we have multiple iOS-specific indicators
+        // AND it happened within handoff window
+        if foundIosIndicators.count >= 2,
+           let handoffTime = lastHandoffDetectionTime,
+           Date().timeIntervalSince(handoffTime) <= handoffDetectionWindow {
+            print("🔄 [HandoffDetection] Multiple iOS indicators within handoff window")
             return true
         }
         
+        // Additional check: Look for handoff source metadata
+        if let sourceString = pasteboard.string(forType: NSPasteboard.PasteboardType("com.apple.handoff.source")) {
+            print("🔄 [HandoffDetection] Found handoff source metadata: \(sourceString)")
+            return true
+        }
+        
+        print("🔄 [HandoffDetection] No handoff indicators found - this is a regular clipboard change")
         return false
     }
     
@@ -400,58 +431,19 @@ class ClipboardMonitor: ObservableObject {
     // MARK: - Phase 5: Enhanced Sync with Offline Fallback
     
     private func handleClipboardSync(_ clipboardItem: ClipboardItem, content: String, isHandoffRelay: Bool) async {
-        do {
-            // Try to push to iCloud
-            try await dataManager.cloudKitManager.pushItem(clipboardItem)
-            print("✅ [MacBook Relay] Successfully pushed to iCloud: \(content.prefix(30))")
-            
-            // If this was a handoff relay and iCloud succeeded, mark it
-            if isHandoffRelay {
-                print("🔄 [MacBook Relay] Successfully relayed handoff item to iCloud")
-            }
-            
-        } catch {
-            print("❌ [MacBook Relay] iCloud push failed: \(error)")
-            
-            // Phase 5: Offline fallback - the operation is already queued by CloudKitManager
-            // But we can enhance handoff support for immediate cross-device sharing
-            if isHandoffRelay {
-                print("🔄 [Offline Fallback] Handoff item will be queued until online")
-            } else {
-                // For local items, we could implement enhanced Universal Handoff broadcasting
-                await handleOfflineFallback(content: content, type: ContentType(rawValue: clipboardItem.contentType ?? "") ?? .text)
-            }
-        }
-    }
-    
-    private func handleOfflineFallback(content: String, type: ContentType) async {
-        // Phase 5: When offline, MacBook can still act as Universal Handoff broadcaster
-        print("📡 [Offline Fallback] Broadcasting via Universal Handoff while offline")
+        // The ClipboardDataManager already pushes items to CloudKit in createClipboardItem()
+        // So we don't need to duplicate the push here. This method can be used for 
+        // additional processing or fallback handling in the future.
         
-        // Create a handoff activity to broadcast the clipboard content
-        let handoffActivity = NSUserActivity(activityType: "com.wanmenzy.kopi.macbook.clipboard")
-        handoffActivity.title = "Kopi Clipboard (MacBook)"
-        handoffActivity.isEligibleForHandoff = true
-        handoffActivity.isEligibleForSearch = false
-        handoffActivity.webpageURL = nil
+        print("✅ [MacBook Relay] Item processed: \(content.prefix(30))")
         
-        // Include clipboard data in handoff
-        handoffActivity.userInfo = [
-            "clipboard_content": content,
-            "clipboard_type": type.rawValue,
-            "device_id": ContentHashingUtility.getDeviceIdentifier(),
-            "timestamp": Date().timeIntervalSince1970,
-            "offline_fallback": true
-        ]
-        
-        handoffActivity.needsSave = true
-        handoffActivity.becomeCurrent()
-        
-        print("📡 [Offline Fallback] MacBook broadcasting clipboard via Universal Handoff")
-        
-        // Keep the activity current for a reasonable time to allow pickup
-        DispatchQueue.main.asyncAfter(deadline: .now() + 30.0) {
-            handoffActivity.resignCurrent()
+        if isHandoffRelay {
+            print("🔄 [MacBook Relay] Handoff item processed")
+        } else {
+            // For local items, we could implement enhanced Universal Handoff broadcasting
+            // when offline, but since CloudKitManager handles offline queueing, 
+            // we'll skip this for now to avoid complexity
+            print("📱 [Local Item] Regular clipboard item processed")
         }
     }
     

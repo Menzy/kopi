@@ -206,9 +206,6 @@ struct PersistenceController {
                 print("🌐 [macOS] CloudKit Connectivity Test:")
                 if let recordID = recordID {
                     print("✅ [macOS] Successfully fetched user record ID: \(recordID.recordName)")
-                    
-                    // Test database operations to get more server response details
-                    self.testDatabaseOperations(container: container)
                 } else if let error = error {
                     print("❌ [macOS] Failed to fetch user record: \(error.localizedDescription)")
                     print("❌ [macOS] Error domain: \((error as NSError).domain)")
@@ -235,46 +232,5 @@ struct PersistenceController {
                 }
             }
         }
-    }
-    
-    private func testDatabaseOperations(container: CKContainer) {
-        let database = container.privateCloudDatabase
-        
-        // Test a simple query to see server responses
-        let query = CKQuery(recordType: "CD_ClipboardItem", predicate: NSPredicate(value: true))
-        
-        let queryOperation = CKQueryOperation(query: query)
-        queryOperation.resultsLimit = 1
-        queryOperation.recordFetchedBlock = { record in
-            DispatchQueue.main.async {
-                print("📄 [macOS] Record fetched: \(record.recordID.recordName) (\(record.recordType))")
-                print("📄 [macOS] Record keys: \(Array(record.allKeys()))")
-            }
-        }
-        queryOperation.queryCompletionBlock = { cursor, error in
-            DispatchQueue.main.async {
-                print("🔍 [macOS] Database Query Test:")
-                if let error = error {
-                    print("❌ [macOS] Query failed: \(error.localizedDescription)")
-                    print("❌ [macOS] Query error domain: \((error as NSError).domain)")
-                    print("❌ [macOS] Query error code: \((error as NSError).code)")
-                    print("❌ [macOS] Query error info: \((error as NSError).userInfo)")
-                    
-                    if let ckError = error as? CKError {
-                        if let serverResponseData = ckError.userInfo["ServerResponseBody"] {
-                            print("📡 [macOS] Query server response: \(serverResponseData)")
-                        }
-                    }
-                } else {
-                    print("✅ [macOS] Query completed successfully")
-                    if let cursor = cursor {
-                        print("📄 [macOS] More records available (cursor present)")
-                    } else {
-                        print("📄 [macOS] All records fetched")
-                    }
-                }
-            }
-        }
-        database.add(queryOperation)
     }
 }
