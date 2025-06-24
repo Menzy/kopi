@@ -9,26 +9,20 @@ import SwiftUI
 
 struct EmptyStateView: View {
     var body: some View {
-        VStack(spacing: 20) {
-            Image(systemName: "doc.on.clipboard")
-                .font(.system(size: 60))
-                .foregroundColor(.gray)
+        VStack {
+            Spacer()
             
-            Text("No Clipboard History")
+            Text("No clipboard history")
                 .font(.title2)
                 .fontWeight(.medium)
-            
-            Text("Copy something on your Mac to see it appear here automatically.")
-                .font(.body)
                 .foregroundColor(.secondary)
-                .multilineTextAlignment(.center)
-                .padding(.horizontal, 20)
+            
+            Spacer()
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .padding(.horizontal, 40)
     }
 }
 
 #Preview {
     EmptyStateView()
-} 
+}

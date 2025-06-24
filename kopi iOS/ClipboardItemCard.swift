@@ -60,18 +60,31 @@ struct ClipboardItemCard: View {
     var body: some View {
         ZStack {
             VStack(alignment: .leading, spacing: 0) {
-                // Header with content type and timestamp
+                // Header with content type, timestamp, and source app icon
                 HStack {
-                    Text(contentTypeLabel)
-                        .font(.subheadline)
-                        .fontWeight(.medium)
-                        .foregroundColor(.primary)
+                    // Left side: content type and timestamp
+                    HStack(spacing: 8) {
+                        Text(contentTypeLabel)
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                            .foregroundColor(.primary)
+                        
+                        Text(formatTimestamp(item.createdAt ?? Date()))
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                    }
                     
                     Spacer()
                     
-                    Text(formatTimestamp(item.createdAt ?? Date()))
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
+                    // Right side: source app icon
+                    if let iconData = item.sourceAppIcon,
+                       let uiImage = UIImage(data: iconData) {
+                        Image(uiImage: uiImage)
+                            .resizable()
+                            .aspectRatio(contentMode: .fit)
+                            .frame(width: 20, height: 20)
+                            .cornerRadius(4)
+                    }
                 }
                 .frame(height: 24)
                 .padding(.bottom, 12)
@@ -151,33 +164,27 @@ struct ClipboardItemCard: View {
             )
             .shadow(color: Color.black.opacity(0.05), radius: 8, x: 0, y: 2)
             
-            // Selection circle overlay
+            // Selection circle overlay - centered
             if isSelectionMode {
-                VStack {
-                    HStack {
-                        Spacer()
-                        Button(action: {}) {
-                            ZStack {
+                Button(action: {}) {
+                    ZStack {
+                        Circle()
+                            .fill(isSelected ? Color.blue : Color.white)
+                            .frame(width: 24, height: 24)
+                            .overlay(
                                 Circle()
-                                    .fill(isSelected ? Color.blue : Color.white)
-                                    .frame(width: 24, height: 24)
-                                    .overlay(
-                                        Circle()
-                                            .stroke(isSelected ? Color.blue : Color.gray.opacity(0.5), lineWidth: 2)
-                                    )
-                                
-                                if isSelected {
-                                    Image(systemName: "checkmark")
-                                        .foregroundColor(.white)
-                                        .font(.system(size: 12, weight: .bold))
-                                }
-                            }
+                                    .stroke(Color.white, lineWidth: 2)
+                            )
+                            .shadow(color: isSelected ? Color.clear : Color.black.opacity(0.2), radius: 2, x: 0, y: 1)
+                        
+                        if isSelected {
+                            Image(systemName: "checkmark")
+                                .foregroundColor(.white)
+                                .font(.system(size: 12, weight: .bold))
                         }
-                        .disabled(true) // Disable button action since tap is handled by parent
                     }
-                    Spacer()
                 }
-                .padding(12)
+                .disabled(true) // Disable button action since tap is handled by parent
             }
         }
     }
@@ -209,4 +216,4 @@ struct ClipboardItemCard: View {
     }
     
     return createPreview()
-} 
+}

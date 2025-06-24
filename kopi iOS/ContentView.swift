@@ -48,34 +48,37 @@ struct ClipboardHistoryView: View {
     var body: some View {
         NavigationView {
             VStack(spacing: 0) {
-                // Phase 4: Sync status indicator
+                // Custom header with title and menu
                 HStack {
-                    HStack {
-                        Circle()
-                            .fill(syncStatusColor)
-                            .frame(width: 8, height: 8)
-                        Text(syncStatusText)
-                            .font(.caption)
-                            .foregroundColor(syncStatusColor)
-                    }
+                    Text(isSelectionMode ? "\(selectedItems.count) Selected" : "Clipboard")
+                        .font(.title2)
+                        .fontWeight(.semibold)
                     
                     Spacer()
                     
-                    if let lastSync = clipboardService.lastSyncTime {
-                        Text("Last sync: \(formatSyncTime(lastSync))")
-                            .font(.caption2)
-                            .foregroundColor(.secondary)
-                    }
-                    
-                    Button(action: {
-                        clipboardService.forceSyncFromCloud()
-                    }) {
-                        Image(systemName: "arrow.clockwise")
-                            .font(.caption)
+                    if !isSelectionMode {
+                        Menu {
+                            Button("Select", systemImage: "checkmark.circle") {
+                                enterSelectionMode()
+                            }
+                            
+                            Button("Settings", systemImage: "gear") {
+                                showingSettings = true
+                            }
+                            
+                            Divider()
+                            
+                            Button("Clear All", systemImage: "trash", role: .destructive) {
+                                clearAllItems()
+                            }
+                        } label: {
+                            Image(systemName: "ellipsis")
+                                .font(.title2)
+                        }
                     }
                 }
                 .padding(.horizontal, 16)
-                .padding(.bottom, 8)
+                .padding(.bottom, 16)
                 
                 // Search bar
                 HStack {
@@ -135,66 +138,76 @@ struct ClipboardHistoryView: View {
                     }
                 }
             }
-            .navigationTitle(isSelectionMode ? "\(selectedItems.count) Selected" : "Clipboard")
-            .navigationBarTitleDisplayMode(.large)
+            .navigationTitle("")
+            .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 if isSelectionMode {
                     ToolbarItem(placement: .navigationBarLeading) {
-                        Button("Cancel") {
-                            exitSelectionMode()
+                        Button(allItemsSelected ? "Deselect All" : "Select All") {
+                            toggleSelectAll()
                         }
                     }
                     
                     ToolbarItem(placement: .navigationBarTrailing) {
-                        Menu {
-                            Button("Select All") {
-                                selectAll()
-                            }
-                            
-                            Divider()
-                            
-                            Button("Copy", systemImage: "doc.on.doc") {
-                                copySelectedItems()
-                            }
-                            .disabled(selectedItems.isEmpty)
-                            
-                            Button("Share", systemImage: "square.and.arrow.up") {
-                                shareSelectedItems()
-                            }
-                            .disabled(selectedItems.isEmpty)
-                            
-                            Divider()
-                            
-                            Button("Delete", systemImage: "trash", role: .destructive) {
-                                deleteSelectedItems()
-                            }
-                            .disabled(selectedItems.isEmpty)
-                        } label: {
-                            Image(systemName: "ellipsis")
-                                .font(.title2)
+                        Button("Done") {
+                            exitSelectionMode()
                         }
                     }
-                } else {
-                    ToolbarItem(placement: .navigationBarTrailing) {
-                        Menu {
-                            Button("Select", systemImage: "checkmark.circle") {
-                                enterSelectionMode()
+                }
+            }
+            .safeAreaInset(edge: .bottom) {
+                if isSelectionMode {
+                    HStack(spacing: 0) {
+                        Button(action: {
+                            copySelectedItems()
+                        }) {
+                            VStack(spacing: 4) {
+                                Image(systemName: "doc.on.doc")
+                                    .font(.title2)
+                                Text("Copy")
+                                    .font(.caption)
                             }
-                            
-                            Button("Settings", systemImage: "gear") {
-                                showingSettings = true
-                            }
-                            
-                            Divider()
-                            
-                            Button("Clear All", systemImage: "trash", role: .destructive) {
-                                clearAllItems()
-                            }
-                        } label: {
-                            Image(systemName: "ellipsis")
-                                .font(.title2)
+                            .foregroundColor(selectedItems.isEmpty ? .secondary : .primary)
+                            .frame(maxWidth: .infinity)
                         }
+                        .disabled(selectedItems.isEmpty)
+                        
+                        Button(action: {
+                            shareSelectedItems()
+                        }) {
+                            VStack(spacing: 4) {
+                                Image(systemName: "square.and.arrow.up")
+                                    .font(.title2)
+                                Text("Share")
+                                    .font(.caption)
+                            }
+                            .foregroundColor(selectedItems.isEmpty ? .secondary : .primary)
+                            .frame(maxWidth: .infinity)
+                        }
+                        .disabled(selectedItems.isEmpty)
+                        
+                        Button(action: {
+                            deleteSelectedItems()
+                        }) {
+                            VStack(spacing: 4) {
+                                Image(systemName: "trash")
+                                    .font(.title2)
+                                Text("Delete")
+                                    .font(.caption)
+                            }
+                            .foregroundColor(selectedItems.isEmpty ? .secondary : .red)
+                            .frame(maxWidth: .infinity)
+                        }
+                        .disabled(selectedItems.isEmpty)
                     }
+                    .padding(.vertical, 12)
+                    .background(Color(.systemBackground))
+                    .overlay(
+                        Rectangle()
+                            .frame(height: 0.5)
+                            .foregroundColor(Color(.separator)),
+                        alignment: .top
+                    )
                 }
             }
             .sheet(isPresented: $showingSettings) {
@@ -209,32 +222,7 @@ struct ClipboardHistoryView: View {
         return contentType == .url || (contentType == .text && index % 3 == 0)
     }
     
-    // Phase 5: Enhanced sync status UI helpers
-    private var syncStatusColor: Color {
-        switch clipboardService.syncStatus {
-        case "Synced":
-            return .green
-        case "Syncing...":
-            return .orange
-        case "Sync Failed":
-            return .red
-        case "Offline":
-            return .orange
-        default:
-            return .gray
-        }
-    }
-    
-    private var syncStatusText: String {
-        // iOS is purely a sync client - no offline queue needed
-        return clipboardService.syncStatus
-    }
-    
-    private func formatSyncTime(_ date: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.timeStyle = .short
-        return formatter.string(from: date)
-    }
+
     
     private func copyItem(_ item: ClipboardItem) {
         // Phase 4: Use ClipboardService method which handles tracking
@@ -291,9 +279,17 @@ struct ClipboardHistoryView: View {
         }
     }
     
-    private func selectAll() {
+    private var allItemsSelected: Bool {
+        !filteredItems.isEmpty && selectedItems.count == filteredItems.count
+    }
+    
+    private func toggleSelectAll() {
         withAnimation(.easeInOut(duration: 0.3)) {
-            selectedItems = Set(filteredItems.map { $0.objectID })
+            if allItemsSelected {
+                selectedItems.removeAll()
+            } else {
+                selectedItems = Set(filteredItems.map { $0.objectID })
+            }
         }
     }
     
