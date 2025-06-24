@@ -66,14 +66,6 @@ struct ContentView: View {
         } detail: {
             // Main content area
             VStack(spacing: 0) {
-                // Toolbar
-                ToolbarView(
-                    searchText: $searchText,
-                    onRefresh: refreshData
-                )
-                
-                Divider()
-                
                 // Grid view
                 ClipboardGridView(
                     items: filteredItems,
@@ -94,7 +86,12 @@ struct ContentView: View {
                     }
                 )
             }
-            .navigationTitle(titleForCurrentFilter)
+            .navigationTitle("")
+            .toolbar {
+                ToolbarItem(placement: .primaryAction) {
+                    SearchBarView(searchText: $searchText)
+                }
+            }
         }
         .frame(minWidth: 856, minHeight: 400) // Minimum size for 3 cards: (200*3) + (12*2 spacing) + (16*2 padding) + 200 sidebar = 856
         .onAppear {
@@ -163,54 +160,38 @@ struct ContentView: View {
     }
 }
 
-// MARK: - Toolbar View
+// MARK: - Search Bar View
 
-struct ToolbarView: View {
+struct SearchBarView: View {
     @Binding var searchText: String
-    let onRefresh: () -> Void
     
     var body: some View {
-        HStack(spacing: 12) {
-            // Search field
-            HStack {
-                Image(systemName: "magnifyingglass")
-                    .foregroundColor(.secondary)
-                
-                TextField("Search clipboard items...", text: $searchText)
-                    .textFieldStyle(.plain)
-                
-                if !searchText.isEmpty {
-                    Button(action: { searchText = "" }) {
-                        Image(systemName: "xmark.circle.fill")
-                            .foregroundColor(.secondary)
-                    }
-                    .buttonStyle(PlainButtonStyle())
+        HStack {
+            Image(systemName: "magnifyingglass")
+                .foregroundColor(.secondary)
+            
+            TextField("Search clipboard items...", text: $searchText)
+                .textFieldStyle(.plain)
+            
+            if !searchText.isEmpty {
+                Button(action: { searchText = "" }) {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundColor(.secondary)
                 }
+                .buttonStyle(PlainButtonStyle())
             }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 6)
-            .background(
-                RoundedRectangle(cornerRadius: 6)
-                    .fill(Color(NSColor.controlBackgroundColor))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 6)
-                            .stroke(Color(NSColor.separatorColor), lineWidth: 0.5)
-                    )
-            )
-            .frame(maxWidth: 300)
-            
-            Spacer()
-            
-            // Refresh button
-            Button(action: onRefresh) {
-                Image(systemName: "arrow.clockwise")
-            }
-            .buttonStyle(.bordered)
-            .controlSize(.small)
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
-        .background(Color(NSColor.controlBackgroundColor).opacity(0.8))
+        .padding(.horizontal, 8)
+        .padding(.vertical, 6)
+        .background(
+            RoundedRectangle(cornerRadius: 6)
+                .fill(Color(NSColor.controlBackgroundColor))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 6)
+                        .stroke(Color(NSColor.separatorColor), lineWidth: 0.5)
+                )
+        )
+        .frame(maxWidth: 300)
     }
 }
 

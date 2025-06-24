@@ -30,12 +30,11 @@ struct ClipboardGridView: View {
     
     var body: some View {
         GeometryReader { geometry in
-            ScrollView {
-                if items.isEmpty {
-                    EmptyGridStateView()
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .padding(40)
-                } else {
+            if items.isEmpty {
+                EmptyGridStateView()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                ScrollView {
                     LazyVGrid(columns: calculateColumns(for: geometry.size.width), alignment: .leading, spacing: spacing) {
                         ForEach(items, id: \.objectID) { item in
                             ClipboardItemCard(
@@ -74,17 +73,17 @@ struct ClipboardGridView: View {
                     )
                 }
             }
-            .contentShape(Rectangle())
-            .gesture(
-                DragGesture(coordinateSpace: .global)
-                    .onChanged { value in
-                        handleDragChanged(value)
-                    }
-                    .onEnded { _ in
-                        handleDragEnded()
-                    }
-            )
         }
+        .contentShape(Rectangle())
+        .gesture(
+            DragGesture(coordinateSpace: .global)
+                .onChanged { value in
+                    handleDragChanged(value)
+                }
+                .onEnded { _ in
+                    handleDragEnded()
+                }
+        )
         .background(Color(NSColor.controlBackgroundColor).opacity(0.3))
         .focusable()
         .focused($isFocused)
@@ -290,32 +289,15 @@ struct ClipboardGridView: View {
 
 struct EmptyGridStateView: View {
     var body: some View {
-        VStack(spacing: 20) {
-            Image(systemName: "doc.on.clipboard")
-                .font(.system(size: 64))
+        VStack {
+            Spacer()
+            
+            Text("No clipboard history")
+                .font(.title2)
+                .fontWeight(.semibold)
                 .foregroundColor(.secondary)
             
-            VStack(spacing: 8) {
-                Text("No Clipboard Items")
-                    .font(.title2)
-                    .fontWeight(.semibold)
-                
-                Text("Copy something to get started!")
-                    .font(.body)
-                    .foregroundColor(.secondary)
-                    .multilineTextAlignment(.center)
-            }
-            
-            Button("Add Test Item") {
-                let testContent = "Test clipboard item created at \(Date().formatted())"
-                _ = ClipboardDataManager.shared.createClipboardItem(
-                    content: testContent,
-                    contentType: .text,
-                    sourceApp: "com.apple.finder",
-                    sourceAppName: "Finder"
-                )
-            }
-            .buttonStyle(.bordered)
+            Spacer()
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }

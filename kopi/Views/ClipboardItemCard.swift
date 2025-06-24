@@ -145,11 +145,9 @@ struct ClipboardItemCard: View {
                             Image(systemName: "link")
                                 .font(.caption2)
                                 .foregroundColor(.secondary)
-                            Text(content)
+                            Text("\(content.count) characters")
                                 .font(.caption)
                                 .foregroundColor(.secondary)
-                                .lineLimit(1)
-                                .truncationMode(.middle)
                         }
                         
                     case .image:
