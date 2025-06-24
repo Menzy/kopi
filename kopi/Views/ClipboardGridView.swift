@@ -36,7 +36,7 @@ struct ClipboardGridView: View {
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                         .padding(40)
                 } else {
-                    LazyVGrid(columns: calculateColumns(for: geometry.size.width), spacing: spacing) {
+                    LazyVGrid(columns: calculateColumns(for: geometry.size.width), alignment: .leading, spacing: spacing) {
                         ForEach(items, id: \.objectID) { item in
                             ClipboardItemCard(
                                 item: item,
@@ -65,7 +65,8 @@ struct ClipboardGridView: View {
                             }
                         }
                     }
-                    .padding(.horizontal, 20)
+                    .frame(maxWidth: .infinity, alignment: .topLeading)
+                    .padding(.horizontal, 16)
                     .padding(.vertical, 16)
                     .overlay(
                         // Drag selection overlay
@@ -274,7 +275,7 @@ struct ClipboardGridView: View {
     }
     
     private func calculateColumns(for width: CGFloat) -> [GridItem] {
-        let availableWidth = width - 40 // Account for horizontal padding
+        let availableWidth = width - 32 // Account for horizontal padding (16px on each side)
         let itemWidth = cardSize + spacing
         let possibleColumns = Int(availableWidth / itemWidth)
         let columnCount = max(3, possibleColumns) // Minimum 3 columns
@@ -318,4 +319,4 @@ struct EmptyGridStateView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
-} 
+}

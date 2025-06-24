@@ -96,7 +96,7 @@ struct ContentView: View {
             }
             .navigationTitle(titleForCurrentFilter)
         }
-        .frame(minWidth: 680, minHeight: 400) // Minimum size for 3 cards (200*3 + spacing + sidebar)
+        .frame(minWidth: 856, minHeight: 400) // Minimum size for 3 cards: (200*3) + (12*2 spacing) + (16*2 padding) + 200 sidebar = 856
         .onAppear {
             setupKeyboardShortcuts()
             refreshData()
@@ -126,7 +126,7 @@ struct ContentView: View {
     private var titleForCurrentFilter: String {
         switch selectedFilter {
         case .all:
-            return "All Clipboard Items"
+            return "Clipboard"
         case .contentType(let contentType):
             return contentType.displayName
         case .app(let bundleID):
