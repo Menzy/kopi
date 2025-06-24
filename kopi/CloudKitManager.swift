@@ -193,6 +193,14 @@ class CloudKitManager: ObservableObject {
             throw CloudKitError.invalidData("Item missing ID")
         }
         
+        // Check if this is a deletion
+        if item.markedAsDeleted {
+            print("🗑️ [CloudKit] Deleting item from iCloud: \(itemId)")
+            try await deleteItemFromCloudKit(itemId)
+            return
+        }
+        
+        // Regular save operation for non-deleted items
         let record = CKRecord(recordType: "ClipboardItem", recordID: CKRecord.ID(recordName: itemId.uuidString))
         
         // Map Core Data properties to CloudKit record
@@ -205,7 +213,7 @@ class CloudKitManager: ObservableObject {
         record["sourceAppBundleID"] = item.sourceAppBundleID
         record["sourceAppName"] = item.sourceAppName
         record["sourceAppIcon"] = item.sourceAppIcon
-        record["markedAsDeleted"] = item.markedAsDeleted ? 1 : 0
+        record["markedAsDeleted"] = 0 // Always 0 for non-deleted items
         record["lastModified"] = item.lastModified
         
         do {
@@ -223,6 +231,24 @@ class CloudKitManager: ObservableObject {
             
             print("❌ [CloudKit] Failed to push item: \(error)")
             throw CloudKitError.saveFailure(error)
+        }
+    }
+    
+    private func deleteItemFromCloudKit(_ itemId: UUID) async throws {
+        let recordID = CKRecord.ID(recordName: itemId.uuidString)
+        
+        do {
+            try await privateDatabase.deleteRecord(withID: recordID)
+            print("✅ [CloudKit] Successfully deleted item from iCloud: \(itemId)")
+        } catch {
+            // Handle the case where the record doesn't exist on the server
+            if let ckError = error as? CKError, ckError.code == .unknownItem {
+                print("ℹ️ [CloudKit] Item already deleted from iCloud: \(itemId)")
+                return // This is not an error - item is already gone
+            }
+            
+            print("❌ [CloudKit] Failed to delete item from iCloud: \(error)")
+            throw CloudKitError.deleteFailure(error)
         }
     }
     

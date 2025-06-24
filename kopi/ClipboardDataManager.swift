@@ -114,55 +114,123 @@ class ClipboardDataManager: ObservableObject {
         let content = item.content?.prefix(50) ?? "no content"
         print("🗑️ [macOS] Deleting clipboard item: \(itemId) - \(content)")
         
+        // Capture the object ID before any modifications
+        let objectID = item.objectID
+        
         // Soft delete in CloudKit (mark as deleted)
         item.markedAsDeleted = true
         item.lastModified = Date()
         
-        // Push the deletion to CloudKit first
+        // Save the changes to persist the markedAsDeleted flag
+        saveContext()
+        
+        // Delete from CloudKit first, then delete locally
         Task {
             do {
-                try await cloudKitManager.pushItem(item)
-                print("✅ [MacBook Relay] Deletion synced to iCloud: \(itemId)")
+                // Use the direct CloudKit delete API instead of pushItem
+                if let itemUUID = item.id {
+                    try await cloudKitManager.deleteItem(id: itemUUID)
+                    print("✅ [MacBook Relay] Deletion synced to iCloud: \(itemId)")
+                } else {
+                    print("❌ [MacBook Relay] Cannot delete - item missing ID: \(itemId)")
+                    throw CloudKitError.invalidData("Item missing ID")
+                }
+                
+                // Only delete locally after successful CloudKit sync
+                await MainActor.run {
+                    do {
+                        let itemToDelete = try self.viewContext.existingObject(with: objectID) as? ClipboardItem
+                        if let itemToDelete = itemToDelete {
+                            self.viewContext.delete(itemToDelete)
+                            self.saveContext()
+                            print("✅ [macOS] Item deleted locally after CloudKit sync: \(itemId)")
+                        }
+                    } catch {
+                        print("❌ [macOS] Failed to delete item locally: \(error)")
+                    }
+                }
             } catch {
                 print("❌ [MacBook Relay] Failed to sync deletion: \(error)")
+                // Still delete locally even if CloudKit sync fails
+                await MainActor.run {
+                    do {
+                        let itemToDelete = try self.viewContext.existingObject(with: objectID) as? ClipboardItem
+                        if let itemToDelete = itemToDelete {
+                            self.viewContext.delete(itemToDelete)
+                            self.saveContext()
+                            print("⚠️ [macOS] Item deleted locally despite CloudKit sync failure: \(itemId)")
+                        }
+                    } catch {
+                        print("❌ [macOS] Failed to delete item locally: \(error)")
+                    }
+                }
             }
         }
-        
-        // Then delete locally
-        viewContext.delete(item)
-        saveContext()
     }
     
     func deleteClipboardItems(_ items: [ClipboardItem]) {
         print("🗑️ [macOS] Batch deleting \(items.count) clipboard items")
         
-        // First mark all as deleted and sync to CloudKit
+        // Capture object IDs and item info before any modifications
+        let itemsInfo = items.map { item in
+            return (
+                objectID: item.objectID,
+                itemId: item.id?.uuidString ?? "unknown",
+                content: item.content?.prefix(30) ?? "no content"
+            )
+        }
+        
+        // First mark all as deleted
         for item in items {
-            let itemId = item.id?.uuidString ?? "unknown"
-            let content = item.content?.prefix(30) ?? "no content"
-            print("   - Deleting: \(itemId) - \(content)")
-            
             item.markedAsDeleted = true
             item.lastModified = Date()
-            
-            // Sync to CloudKit
-            Task {
-                do {
-                    try await cloudKitManager.pushItem(item)
-                    print("     ✅ [MacBook Relay] Deletion synced: \(itemId)")
-                } catch {
-                    print("     ❌ [MacBook Relay] Failed to sync deletion: \(error)")
-                }
-            }
         }
         
-        // Then delete locally
-        for item in items {
-            viewContext.delete(item)
-        }
+        // Save the changes to persist the markedAsDeleted flags
         saveContext()
         
-        print("✅ [macOS] Batch deletion completed for \(items.count) items")
+        // Then delete from CloudKit and delete locally
+        Task {
+            var syncedCount = 0
+            var failedCount = 0
+            
+            for (index, item) in items.enumerated() {
+                let info = itemsInfo[index]
+                print("   - Deleting: \(info.itemId) - \(info.content)")
+                
+                do {
+                    // Use the direct CloudKit delete API instead of pushItem
+                    if let itemUUID = item.id {
+                        try await cloudKitManager.deleteItem(id: itemUUID)
+                        print("     ✅ [MacBook Relay] Deletion synced: \(info.itemId)")
+                        syncedCount += 1
+                    } else {
+                        print("     ❌ [MacBook Relay] Cannot delete - item missing ID: \(info.itemId)")
+                        failedCount += 1
+                    }
+                } catch {
+                    print("     ❌ [MacBook Relay] Failed to sync deletion: \(error)")
+                    failedCount += 1
+                }
+            }
+            
+            // Delete all items locally after CloudKit sync attempts
+            await MainActor.run {
+                for info in itemsInfo {
+                    do {
+                        let itemToDelete = try self.viewContext.existingObject(with: info.objectID) as? ClipboardItem
+                        if let itemToDelete = itemToDelete {
+                            self.viewContext.delete(itemToDelete)
+                        }
+                    } catch {
+                        print("❌ [macOS] Failed to delete item locally: \(info.itemId) - \(error)")
+                    }
+                }
+                self.saveContext()
+                
+                print("✅ [macOS] Batch deletion completed for \(items.count) items - CloudKit synced: \(syncedCount), failed: \(failedCount)")
+            }
+        }
     }
     
 

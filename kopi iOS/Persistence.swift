@@ -45,22 +45,24 @@ struct PersistenceController {
         return result
     }()
 
-    let container: NSPersistentCloudKitContainer
+    let container: NSPersistentContainer
 
     init(inMemory: Bool = false) {
-        container = NSPersistentCloudKitContainer(name: "kopi")
+        container = NSPersistentContainer(name: "kopi")
         
         if inMemory {
             container.persistentStoreDescriptions.first!.url = URL(fileURLWithPath: "/dev/null")
         } else {
-            // Configure CloudKit for fresh start
+            // Configure for local-only Core Data storage
             guard let description = container.persistentStoreDescriptions.first else {
                 fatalError("Failed to retrieve a persistent store description.")
             }
             
-            // Enable CloudKit sync
+            // Enable persistent history tracking for manual CloudKit sync
             description.setOption(true as NSNumber, forKey: NSPersistentHistoryTrackingKey)
             description.setOption(true as NSNumber, forKey: NSPersistentStoreRemoteChangeNotificationPostOptionKey)
+            
+            print("🔧 [iOS] Configured Core Data for local-only storage (manual CloudKit sync)")
         }
         
         // Load persistent stores with simple error handling
@@ -87,13 +89,13 @@ struct PersistenceController {
             print("Failed to pin viewContext to the current generation: \(error)")
         }
         
-        // Add CloudKit sync monitoring
+        // Add Core Data change monitoring for manual CloudKit sync
         NotificationCenter.default.addObserver(
             forName: .NSPersistentStoreRemoteChange,
             object: container.persistentStoreCoordinator,
             queue: .main
         ) { notification in
-            print("📡 [iOS] CloudKit remote change notification received")
+            print("📡 [iOS] Core Data remote change notification received")
         }
     }
 }

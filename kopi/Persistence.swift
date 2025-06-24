@@ -46,22 +46,24 @@ struct PersistenceController {
         return result
     }()
 
-    let container: NSPersistentCloudKitContainer
+    let container: NSPersistentContainer
 
     init(inMemory: Bool = false) {
-        container = NSPersistentCloudKitContainer(name: "kopi")
+        container = NSPersistentContainer(name: "kopi")
         
         if inMemory {
             container.persistentStoreDescriptions.first!.url = URL(fileURLWithPath: "/dev/null")
         } else {
-            // Configure CloudKit for fresh start
+            // Configure for local-only Core Data storage
             guard let description = container.persistentStoreDescriptions.first else {
                 fatalError("Failed to retrieve a persistent store description.")
             }
             
-            // Enable CloudKit sync
+            // Enable persistent history tracking for manual CloudKit sync
             description.setOption(true as NSNumber, forKey: NSPersistentHistoryTrackingKey)
             description.setOption(true as NSNumber, forKey: NSPersistentStoreRemoteChangeNotificationPostOptionKey)
+            
+            print("🔧 [macOS] Configured Core Data for local-only storage (manual CloudKit sync)")
         }
         
         // Load persistent stores with detailed CloudKit debugging
@@ -108,53 +110,15 @@ struct PersistenceController {
             print("Failed to pin viewContext to the current generation: \(error)")
         }
         
-        // Add comprehensive CloudKit sync monitoring
+        // Add Core Data change monitoring for manual CloudKit sync
         NotificationCenter.default.addObserver(
             forName: .NSPersistentStoreRemoteChange,
             object: container.persistentStoreCoordinator,
             queue: .main
         ) { notification in
-            print("📡 [macOS] CloudKit remote change notification received")
+            print("📡 [macOS] Core Data remote change notification received")
             if let userInfo = notification.userInfo {
                 print("📡 [macOS] Remote change details: \(userInfo)")
-            }
-        }
-        
-        // Monitor CloudKit import events with detailed server response logging
-        NotificationCenter.default.addObserver(
-            forName: NSPersistentCloudKitContainer.eventChangedNotification,
-            object: container,
-            queue: .main
-        ) { notification in
-            if let cloudKitEvent = notification.userInfo?[NSPersistentCloudKitContainer.eventNotificationUserInfoKey] as? NSPersistentCloudKitContainer.Event {
-                print("☁️ [macOS] CloudKit event: \(cloudKitEvent.type.rawValue)")
-                print("☁️ [macOS] Event succeeded: \(cloudKitEvent.succeeded)")
-                print("☁️ [macOS] Event start date: \(cloudKitEvent.startDate)")
-                print("☁️ [macOS] Event end date: \(cloudKitEvent.endDate ?? Date())")
-                
-                if let error = cloudKitEvent.error {
-                    print("❌ [macOS] CloudKit event error: \(error.localizedDescription)")
-                    print("❌ [macOS] Error domain: \((error as NSError).domain)")
-                    print("❌ [macOS] Error code: \((error as NSError).code)")
-                    print("❌ [macOS] Error userInfo: \((error as NSError).userInfo)")
-                    
-                    // Check for CloudKit-specific errors
-                    if let ckError = error as? CKError {
-                        print("❌ [macOS] CKError code: \(ckError.code.rawValue)")
-                        print("❌ [macOS] CKError description: \(ckError.localizedDescription)")
-                        if let underlyingError = ckError.userInfo[NSUnderlyingErrorKey] as? Error {
-                            print("❌ [macOS] Underlying error: \(underlyingError.localizedDescription)")
-                        }
-                        if let serverResponseData = ckError.userInfo["ServerResponseBody"] {
-                            print("📡 [macOS] Server response body: \(serverResponseData)")
-                        }
-                        if let requestUUID = ckError.userInfo["RequestUUID"] {
-                            print("📡 [macOS] Request UUID: \(requestUUID)")
-                        }
-                    }
-                } else {
-                    print("✅ [macOS] CloudKit event completed successfully")
-                }
             }
         }
     }
