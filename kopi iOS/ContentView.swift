@@ -28,13 +28,20 @@ struct ClipboardHistoryView: View {
     private var clipboardItems: FetchedResults<ClipboardItem>
 
     var filteredItems: [ClipboardItem] {
-        if searchText.isEmpty {
-            return Array(clipboardItems)
+        let items = if searchText.isEmpty {
+            Array(clipboardItems)
         } else {
-            return clipboardItems.filter { item in
+            clipboardItems.filter { item in
                 item.content?.localizedCaseInsensitiveContains(searchText) == true ||
                 item.sourceAppName?.localizedCaseInsensitiveContains(searchText) == true
             }
+        }
+        
+        // Deduplicate by objectID to prevent duplicate UI items
+        var seen = Set<NSManagedObjectID>()
+        return items.filter { item in
+            let isNew = seen.insert(item.objectID).inserted
+            return isNew
         }
     }
 
@@ -99,7 +106,7 @@ struct ClipboardHistoryView: View {
                             GridItem(.fixed(cardWidth)),
                             GridItem(.fixed(cardWidth))
                         ], spacing: 16) {
-                            ForEach(Array(filteredItems.enumerated()), id: \.element.id) { index, item in
+                            ForEach(Array(filteredItems.enumerated()), id: \.element.objectID) { index, item in
                                 ClipboardItemCard(
                                     item: item, 
                                     isLarge: shouldUseLargeCard(for: item, at: index),
@@ -219,14 +226,8 @@ struct ClipboardHistoryView: View {
     }
     
     private var syncStatusText: String {
-        let cloudKitManager = CloudKitManager.shared
-        let queueStatus = cloudKitManager.getOfflineQueueStatus()
-        
-        if queueStatus.count > 0 {
-            return "\(clipboardService.syncStatus) (\(queueStatus.count) queued)"
-        } else {
-            return clipboardService.syncStatus
-        }
+        // iOS is purely a sync client - no offline queue needed
+        return clipboardService.syncStatus
     }
     
     private func formatSyncTime(_ date: Date) -> String {

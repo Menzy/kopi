@@ -10,6 +10,7 @@ import CoreData
 import CloudKit
 import AppKit
 
+@MainActor
 class ClipboardDataManager: ObservableObject {
     static let shared = ClipboardDataManager()
     

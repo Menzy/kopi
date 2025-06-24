@@ -124,33 +124,24 @@ class CloudKitManager: ObservableObject {
     }
     
     private func getOperationsToProcess() async -> [OfflineOperation] {
-        return await withCheckedContinuation { continuation in
-            DispatchQueue.global(qos: .background).async { [weak self] in
-                self?.offlineQueueLock.lock()
-                let operations = self?.offlineOperationQueue ?? []
-                self?.offlineQueueLock.unlock()
-                continuation.resume(returning: operations)
-            }
+        return await MainActor.run {
+            self.offlineQueueLock.lock()
+            defer { self.offlineQueueLock.unlock() }
+            return self.offlineOperationQueue
         }
     }
     
     private func removeProcessedOperations(_ processedOperations: [OfflineOperation]) async {
-        await withCheckedContinuation { continuation in
-            DispatchQueue.global(qos: .background).async { [weak self] in
-                self?.offlineQueueLock.lock()
-                for processedOp in processedOperations {
-                    self?.offlineOperationQueue.removeAll { $0.itemId == processedOp.itemId && $0.timestamp == processedOp.timestamp }
-                }
-                let newCount = self?.offlineOperationQueue.count ?? 0
-                self?.offlineQueueLock.unlock()
-                
-                DispatchQueue.main.async {
-                    self?.offlineQueueCount = newCount
-                    self?.saveOfflineQueue()
-                }
-                
-                continuation.resume()
+        await MainActor.run {
+            self.offlineQueueLock.lock()
+            defer { self.offlineQueueLock.unlock() }
+            
+            for processedOp in processedOperations {
+                self.offlineOperationQueue.removeAll { $0.itemId == processedOp.itemId && $0.timestamp == processedOp.timestamp }
             }
+            
+            self.offlineQueueCount = self.offlineOperationQueue.count
+            self.saveOfflineQueue()
         }
     }
     
@@ -547,7 +538,7 @@ class CloudKitManager: ObservableObject {
     
     private func setupNetworkMonitoring() {
         monitor.pathUpdateHandler = { [weak self] path in
-            DispatchQueue.main.async {
+            Task { @MainActor in
                 let wasConnected = self?.isConnected ?? false
                 self?.isConnected = path.status == .satisfied
                 
@@ -556,14 +547,10 @@ class CloudKitManager: ObservableObject {
                     
                     if !wasConnected {
                         // Coming back online - process offline queue and perform full sync
-                        Task {
-                            await self?.handleReconnection()
-                        }
+                        await self?.handleReconnection()
                     } else {
                         // Regular sync
-                        Task {
-                            await self?.syncFromCloud()
-                        }
+                        await self?.syncFromCloud()
                     }
                 } else {
                     print("📵 [CloudKit] Network disconnected - operations will be queued")

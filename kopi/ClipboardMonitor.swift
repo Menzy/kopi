@@ -33,13 +33,18 @@ class ClipboardMonitor: ObservableObject {
     @Published var lastClipboardContent: String = ""
     @Published var clipboardDidChange: Bool = false
     
-    private let dataManager = ClipboardDataManager.shared
+    private var dataManager: ClipboardDataManager!
     private let sourceAppDetector = SourceAppDetector.shared
     private let privacyFilter = PrivacyFilter.shared
     
     private init() {
         lastChangeCount = pasteboard.changeCount
         setupHandoffNotifications()
+        
+        // Initialize dataManager with proper main actor access
+        Task { @MainActor in
+            self.dataManager = ClipboardDataManager.shared
+        }
     }
     
     // MARK: - Phase 3: Universal Handoff Setup
@@ -213,15 +218,17 @@ class ClipboardMonitor: ObservableObject {
                 return
             }
             
-            // Phase 3: Save with relay metadata
-            self.saveClipboardItem(
-                content: clipboardContent.content,
-                type: clipboardContent.type,
-                sourceApp: sourceAppInfo.bundleID,
-                sourceAppName: sourceAppInfo.name,
-                sourceAppIcon: sourceAppInfo.iconData,
-                isHandoffRelay: isHandoffData
-            )
+            // Phase 3: Save with relay metadata - dispatch to main actor
+            Task { @MainActor in
+                self.saveClipboardItem(
+                    content: clipboardContent.content,
+                    type: clipboardContent.type,
+                    sourceApp: sourceAppInfo.bundleID,
+                    sourceAppName: sourceAppInfo.name,
+                    sourceAppIcon: sourceAppInfo.iconData,
+                    isHandoffRelay: isHandoffData
+                )
+            }
             
             // Update published properties on main queue
             DispatchQueue.main.async {
@@ -400,6 +407,7 @@ class ClipboardMonitor: ObservableObject {
         return UTType(uti)?.conforms(to: .image) == true
     }
     
+    @MainActor
     private func saveClipboardItem(content: String, type: ContentType, sourceApp: String?, sourceAppName: String?, sourceAppIcon: Data?, isHandoffRelay: Bool = false) {
         // Phase 3: Create clipboard item with relay metadata
         let clipboardItem = dataManager.createClipboardItem(

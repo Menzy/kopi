@@ -11,9 +11,10 @@ import CoreData
 import BackgroundTasks
 import UniformTypeIdentifiers
 
-class ClipboardService: ObservableObject {
+@MainActor
+class ClipboardService: ObservableObject, @unchecked Sendable {
     private let persistenceController = PersistenceController.shared
-    private let cloudKitManager = CloudKitManager.shared
+    private var cloudKitManager: CloudKitManager!
     
     // Phase 4: Sync client properties
     private var lastChangeCount: Int = 0
@@ -39,23 +40,30 @@ class ClipboardService: ObservableObject {
         // Initialize with current clipboard state
         lastChangeCount = UIPasteboard.general.changeCount
         
-        // Phase 4: Start as sync client (pull-only)
-        setupSyncClient()
-        
-        // Listen for app lifecycle events
-        setupAppLifecycleObservers()
-        
-        // Register background tasks
-        registerBackgroundTasks()
-        
-        // Set up Universal Handoff
-        setupUniversalHandoff()
+        // Initialize CloudKitManager properly with main actor access
+        Task { @MainActor in
+            self.cloudKitManager = CloudKitManager.shared
+            
+            // Phase 4: Start as sync client (pull-only)
+            self.setupSyncClient()
+            
+            // Listen for app lifecycle events
+            self.setupAppLifecycleObservers()
+            
+            // Register background tasks
+            self.registerBackgroundTasks()
+            
+            // Set up Universal Handoff
+            self.setupUniversalHandoff()
+        }
         
         print("📱 [iOS] ClipboardService initialized as sync client")
     }
     
     deinit {
-        stopSyncClient()
+        Task { @MainActor in
+            stopSyncClient()
+        }
         NotificationCenter.default.removeObserver(self)
     }
     
@@ -63,7 +71,8 @@ class ClipboardService: ObservableObject {
     
     private func setupSyncClient() {
         // Phase 4: iPhone acts as sync client - pulls from iCloud periodically
-        syncTimer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { [weak self] _ in
+        // Reduced frequency from 5 seconds to 30 seconds for better performance
+        syncTimer = Timer.scheduledTimer(withTimeInterval: 30.0, repeats: true) { [weak self] _ in
             Task {
                 await self?.performSyncFromCloud()
             }
@@ -74,7 +83,7 @@ class ClipboardService: ObservableObject {
             await performSyncFromCloud()
         }
         
-        print("📱 [iOS] Sync client started - pulling from iCloud every 5 seconds")
+        print("📱 [iOS] Sync client started - pulling from iCloud every 30 seconds")
     }
     
     private func stopSyncClient() {
@@ -87,36 +96,27 @@ class ClipboardService: ObservableObject {
     private func performSyncFromCloud() async {
         syncStatus = "Syncing..."
         
-        do {
-            // Phase 5: Enhanced sync with offline reconciliation
-            print("📥 [iPhone Sync Client] Starting enhanced sync from iCloud...")
-            
-            // Check if we just came back online
-            if cloudKitManager.isConnected && (lastSyncDate == nil || Date().timeIntervalSince(lastSyncDate!) > 300) {
-                // Perform full reconciliation sync if it's been a while or first sync
-                print("🔄 [iPhone Sync Client] Performing full reconciliation sync")
-                await cloudKitManager.forceFullSync()
-            } else {
-                // Regular sync
-                await cloudKitManager.syncFromCloud()
-            }
-            
-            syncStatus = "Synced"
-            lastSyncTime = Date()
-            lastSyncDate = Date()
-            
-            print("✅ [iPhone Sync Client] Successfully synced from iCloud")
-            
-            // Phase 5: Check for offline queue status
-            let queueStatus = cloudKitManager.getOfflineQueueStatus()
-            if queueStatus.count > 0 {
-                print("📊 [iPhone Sync Client] Offline queue has \(queueStatus.count) pending operations")
-            }
-            
-        } catch {
-            syncStatus = cloudKitManager.isConnected ? "Sync Failed" : "Offline"
-            print("❌ [iPhone Sync Client] Sync failed: \(error)")
+        // iOS sync client - only pulls from iCloud
+        print("📥 [iPhone Sync Client] Starting sync from iCloud...")
+        
+        // Check if we just came back online
+        if cloudKitManager.isConnected && (lastSyncDate == nil || Date().timeIntervalSince(lastSyncDate!) > 300) {
+            // Perform full reconciliation sync if it's been a while or first sync
+            print("🔄 [iPhone Sync Client] Performing full reconciliation sync")
+            await cloudKitManager.forceFullSync()
+        } else {
+            // Regular sync
+            await cloudKitManager.syncFromCloud()
         }
+        
+        syncStatus = "Synced"
+        lastSyncTime = Date()
+        lastSyncDate = Date()
+        
+        // Force UI update by triggering objectWillChange
+        objectWillChange.send()
+        
+        print("✅ [iPhone Sync Client] Successfully synced from iCloud")
     }
     
     // MARK: - Phase 4: Universal Handoff Implementation
@@ -159,12 +159,10 @@ class ClipboardService: ObservableObject {
             queue: .main
         ) { [weak self] _ in
             print("📱 [iPhone Sync Client] App became active - syncing from iCloud")
-            Task {
+            Task { @MainActor in
                 await self?.performSyncFromCloud()
+                self?.checkForLocalClipboardChanges()
             }
-            
-            // Also check for new local clipboard changes to send via handoff
-            self?.checkForLocalClipboardChanges()
         }
         
         // Phase 4: Monitor when app goes to background - send current clipboard via handoff if changed
@@ -174,8 +172,10 @@ class ClipboardService: ObservableObject {
             queue: .main
         ) { [weak self] _ in
             print("📱 [iPhone Sync Client] App entered background")
-            self?.handleAppGoingToBackground()
-            self?.scheduleBackgroundProcessing()
+            Task { @MainActor in
+                self?.handleAppGoingToBackground()
+                self?.scheduleBackgroundProcessing()
+            }
         }
         
         // Monitor when app will terminate
@@ -184,7 +184,9 @@ class ClipboardService: ObservableObject {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            self?.stopSyncClient()
+            Task { @MainActor in
+                self?.stopSyncClient()
+            }
         }
     }
     
@@ -234,22 +236,25 @@ class ClipboardService: ObservableObject {
     
     private func handleLocalClipboardChange(content: String, type: ContentType) async {
         // Phase 5: Check if we're online or offline
-        if await cloudKitManager.isConnected {
+        if cloudKitManager.isConnected {
             // Online: Send via Universal Handoff for immediate MacBook relay
             print("🌐 [iPhone Online] Sending via Universal Handoff for MacBook relay")
             await sendViaUniversalHandoffWithConfirmation(content: content, type: type)
             
             // Also try direct sync after a short delay to catch any missed items
-            DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
-                Task {
-                    await self.performSyncFromCloud()
-                }
+            Task { @MainActor in
+                try? await Task.sleep(nanoseconds: 3_000_000_000) // 3 seconds
+                await self.performSyncFromCloud()
             }
             
         } else {
             // Offline: Store locally and send via Universal Handoff as fallback
-            print("📵 [iPhone Offline] Storing locally and sending via Universal Handoff")
-            await handleOfflineClipboardChange(content: content, type: type)
+            print("📵 [iPhone Offline] Sending via Universal Handoff only - no local storage")
+            
+            // Only send via Universal Handoff for MacBook to handle
+            sendViaUniversalHandoff(content: content, type: type)
+            
+            print("🔄 [iPhone Offline] Clipboard change sent via Universal Handoff - MacBook will handle iCloud sync")
         }
     }
     
@@ -261,36 +266,15 @@ class ClipboardService: ObservableObject {
     }
     
     private func handleOfflineClipboardChange(content: String, type: ContentType) async {
-        // Phase 5: When offline, save locally with special offline marking
-        let context = persistenceController.container.viewContext
-        let clipboardItem = ClipboardItem(context: context)
+        // Phase 5: iOS should NEVER create records on iCloud - only send via Universal Handoff
+        // Remove local storage and iCloud push - iOS is purely a sync client
         
-        clipboardItem.id = UUID()
-        clipboardItem.content = content
-        clipboardItem.contentType = type.rawValue
-        clipboardItem.contentHash = ContentHashingUtility.generateContentHash(from: content)
-        clipboardItem.createdAt = Date()
-        clipboardItem.createdOnDevice = ContentHashingUtility.getDeviceIdentifier()
-        clipboardItem.lastModified = Date()
-        clipboardItem.iCloudSyncStatus = SyncStatus.local.rawValue // Will be synced when online
+        print("📵 [iPhone Offline] Sending via Universal Handoff only - no local storage")
         
-        // Mark as offline-created for reconciliation
-        clipboardItem.sourceAppBundleID = "com.apple.clipboard.offline"
-        clipboardItem.sourceAppName = "iPhone (Offline)"
+        // Only send via Universal Handoff for MacBook to handle
+        sendViaUniversalHandoff(content: content, type: type)
         
-        do {
-            try context.save()
-            print("💾 [iPhone Offline] Saved clipboard item locally: \(content.prefix(30))")
-            
-            // Still send via Universal Handoff for immediate availability
-            sendViaUniversalHandoff(content: content, type: type)
-            
-            // Queue for sync when back online
-            try? await cloudKitManager.pushItem(clipboardItem) // This will queue offline
-            
-        } catch {
-            print("❌ [iPhone Offline] Failed to save clipboard item: \(error)")
-        }
+        print("🔄 [iPhone Offline] Clipboard change sent via Universal Handoff - MacBook will handle iCloud sync")
     }
     
     // MARK: - Phase 5: Enhanced Sync with Offline Reconciliation
@@ -305,12 +289,13 @@ class ClipboardService: ObservableObject {
         let request = BGAppRefreshTaskRequest(identifier: backgroundTaskIdentifier)
         request.earliestBeginDate = Date(timeIntervalSinceNow: 15 * 60) // 15 minutes
         
+        // BGTaskScheduler.shared.submit() doesn't throw, so no try/catch needed
         do {
             try BGTaskScheduler.shared.submit(request)
-            print("📱 [iOS] Scheduled background clipboard sync")
         } catch {
-            print("❌ [iOS] Could not schedule background task: \(error)")
+            print("❌ [iOS] Failed to schedule background task: \(error)")
         }
+        print("📱 [iOS] Scheduled background clipboard sync")
     }
     
     private func handleBackgroundClipboardSync(task: BGAppRefreshTask) {

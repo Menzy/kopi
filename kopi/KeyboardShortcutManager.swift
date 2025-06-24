@@ -172,6 +172,7 @@ struct KeyboardShortcut {
 
 // MARK: - Quick Paste Manager
 
+@MainActor
 class QuickPasteManager: ObservableObject {
     static let shared = QuickPasteManager()
     
@@ -183,7 +184,9 @@ class QuickPasteManager: ObservableObject {
     
     private init() {
         keyboardManager.onShortcutPressed = { [weak self] in
-            self?.showQuickPaste()
+            Task { @MainActor in
+                self?.showQuickPaste()
+            }
         }
     }
     
@@ -193,7 +196,8 @@ class QuickPasteManager: ObservableObject {
         isQuickPasteVisible = true
         
         // Auto-hide after 10 seconds if no interaction
-        DispatchQueue.main.asyncAfter(deadline: .now() + 10) {
+        Task {
+            try? await Task.sleep(nanoseconds: 10_000_000_000) // 10 seconds
             if self.isQuickPasteVisible {
                 self.hideQuickPaste()
             }
