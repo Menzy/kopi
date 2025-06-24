@@ -25,9 +25,9 @@ struct kopi_iosApp: App {
                     // Phase 4: Initialize iPhone Sync Client
                     registerBackgroundTasks()
                     
-                    // Initialize CloudKit subscriptions and perform initial sync
+                    // iOS is read-only - no subscriptions created, only sync from cloud
                     Task {
-                        try? await cloudKitManager.subscribeToChanges()
+                        try? await cloudKitManager.subscribeToChanges() // No-op on iOS
                         print("📱 [iPhone Sync Client] App launched - starting initial sync")
                     }
                 }

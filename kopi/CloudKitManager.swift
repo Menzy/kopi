@@ -489,9 +489,18 @@ class CloudKitManager: ObservableObject {
     
     private func createClipboardItem(from record: CKRecord) -> ClipboardItem? {
         let context = persistenceController.container.viewContext
-        let item = ClipboardItem(context: context)
         
         guard let recordName = UUID(uuidString: record.recordID.recordName) else { return nil }
+        
+        // Check if item already exists locally first
+        if let existingItem = findLocalItem(with: recordName) {
+            // Update existing item instead of creating new one
+            updateLocalItem(existingItem, from: record)
+            return existingItem
+        }
+        
+        // Create new item only if it doesn't exist
+        let item = ClipboardItem(context: context)
         
         item.id = recordName
         item.content = record["content"] as? String
@@ -533,6 +542,21 @@ class CloudKitManager: ObservableObject {
         localItem.sourceAppIcon = cloudItem.sourceAppIcon
         localItem.markedAsDeleted = cloudItem.markedAsDeleted
         localItem.lastModified = cloudItem.lastModified
+        localItem.iCloudSyncStatus = SyncStatus.synced.rawValue
+    }
+    
+    private func updateLocalItem(_ localItem: ClipboardItem, from record: CKRecord) {
+        localItem.content = record["content"] as? String
+        localItem.contentType = record["contentType"] as? String
+        localItem.contentHash = record["contentHash"] as? String
+        localItem.createdAt = record["createdAt"] as? Date
+        localItem.createdOnDevice = record["createdOnDevice"] as? String
+        localItem.relayedBy = record["relayedBy"] as? String
+        localItem.sourceAppBundleID = record["sourceAppBundleID"] as? String
+        localItem.sourceAppName = record["sourceAppName"] as? String
+        localItem.sourceAppIcon = record["sourceAppIcon"] as? Data
+        localItem.markedAsDeleted = (record["markedAsDeleted"] as? Int) == 1
+        localItem.lastModified = record["lastModified"] as? Date
         localItem.iCloudSyncStatus = SyncStatus.synced.rawValue
     }
     

@@ -34,6 +34,19 @@ class ClipboardDataManager: ObservableObject {
         sourceAppName: String? = nil,
         sourceAppIcon: Data? = nil
     ) -> ClipboardItem {
+        // Generate content hash first for deduplication
+        let contentHash = ContentHashingUtility.generateContentHash(from: content)
+        
+        // Check if we already have an item with this exact content hash
+        if let existingItem = findItemByContentHash(contentHash) {
+            print("🔍 [macOS Dedup] Found existing item with same content hash: \(existingItem.id?.uuidString ?? "unknown") - content: \(content.prefix(30))")
+            print("🔍 [macOS Dedup] SKIPPING creation of duplicate item - updating timestamp instead")
+            // Update the existing item's timestamp to move it to the top
+            existingItem.lastModified = Date()
+            saveContext()
+            return existingItem
+        }
+        
         let item = ClipboardItem(context: viewContext)
         item.id = UUID()
         item.content = content
@@ -41,7 +54,7 @@ class ClipboardDataManager: ObservableObject {
         // contentPreview removed in new schema
         item.createdAt = Date()
         item.lastModified = Date()
-        item.contentHash = ContentHashingUtility.generateContentHash(from: content)
+        item.contentHash = contentHash
         item.iCloudSyncStatus = SyncStatus.local.rawValue
         item.createdOnDevice = ContentHashingUtility.getDeviceIdentifier()
         item.sourceAppBundleID = sourceApp
@@ -53,7 +66,7 @@ class ClipboardDataManager: ObservableObject {
         // isSensitive removed in new schema
         
         let itemId = item.id?.uuidString ?? "unknown"
-        print("➕ [macOS] Creating clipboard item: \(itemId) - \(content.prefix(50))")
+        print("➕ [macOS] Creating NEW clipboard item: \(itemId) - \(content.prefix(50))")
         
         saveContext()
         
@@ -379,5 +392,19 @@ class ClipboardDataManager: ObservableObject {
         #else
         return "Unknown"
         #endif
+    }
+    
+    private func findItemByContentHash(_ contentHash: String) -> ClipboardItem? {
+        let request: NSFetchRequest<ClipboardItem> = ClipboardItem.fetchRequest()
+        request.predicate = NSPredicate(format: "contentHash == %@ AND markedAsDeleted == NO", contentHash)
+        request.fetchLimit = 1
+        request.sortDescriptors = [NSSortDescriptor(keyPath: \ClipboardItem.lastModified, ascending: false)]
+        
+        do {
+            return try viewContext.fetch(request).first
+        } catch {
+            print("❌ [macOS Dedup] Error finding item by content hash: \(error)")
+            return nil
+        }
     }
 } 

@@ -68,31 +68,10 @@ class CloudKitManager: ObservableObject {
         }
     }
     
-    /// Subscribe to CloudKit changes for real-time updates
+    /// iOS does not create subscriptions - only macOS handles CloudKit subscriptions
+    /// This is a no-op function to maintain compatibility
     func subscribeToChanges() async throws {
-        let subscription = CKQuerySubscription(
-            recordType: "ClipboardItem",
-            predicate: NSPredicate(value: true),
-            subscriptionID: "clipboard-items-subscription",
-            options: [.firesOnRecordCreation, .firesOnRecordUpdate, .firesOnRecordDeletion]
-        )
-        
-        let notificationInfo = CKSubscription.NotificationInfo()
-        notificationInfo.shouldSendContentAvailable = true
-        subscription.notificationInfo = notificationInfo
-        
-        do {
-            try await privateDatabase.save(subscription)
-            print("✅ [CloudKit] Successfully subscribed to changes")
-        } catch {
-            // Subscription might already exist
-            if let ckError = error as? CKError, ckError.code == .serverRejectedRequest {
-                print("ℹ️ [CloudKit] Subscription already exists")
-            } else {
-                print("❌ [CloudKit] Failed to subscribe: \(error)")
-                throw CloudKitError.subscriptionFailure(error)
-            }
-        }
+        print("ℹ️ [iOS CloudKit] Subscription skipped - iOS is read-only, macOS handles subscriptions")
     }
     
     /// Handle remote notification from CloudKit
@@ -452,7 +431,6 @@ enum CloudKitError: LocalizedError {
     case saveFailure(Error)
     case fetchFailure(Error)
     case deleteFailure(Error)
-    case subscriptionFailure(Error)
     
     var errorDescription: String? {
         switch self {
@@ -466,8 +444,6 @@ enum CloudKitError: LocalizedError {
             return "Failed to fetch from CloudKit: \(error.localizedDescription)"
         case .deleteFailure(let error):
             return "Failed to delete from CloudKit: \(error.localizedDescription)"
-        case .subscriptionFailure(let error):
-            return "Failed to subscribe to CloudKit: \(error.localizedDescription)"
         }
     }
 } 
