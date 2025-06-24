@@ -91,7 +91,13 @@ class CloudKitManager: ObservableObject {
         var reconciledCount = 0
         var conflictCount = 0
         var newItemsCount = 0
+        var deletedCount = 0
         
+        // Get all local items for deletion reconciliation
+        let localItems = getAllLocalItems()
+        let cloudItemIDs = Set(cloudItems.compactMap { $0.id })
+        
+        // Process cloud items (updates and new items)
         for cloudItem in cloudItems {
             // Check if we already have this item locally
             if let existingItem = findLocalItem(with: cloudItem.id) {
@@ -131,6 +137,18 @@ class CloudKitManager: ObservableObject {
             }
         }
         
+        // Handle deletions: Remove local items that no longer exist on CloudKit
+        for localItem in localItems {
+            guard let localItemID = localItem.id else { continue }
+            
+            // If local item doesn't exist in cloud items, it was deleted on another device
+            if !cloudItemIDs.contains(localItemID) {
+                print("🗑️ [iOS Deletion Sync] Deleting local item that was removed from CloudKit: \(localItemID)")
+                context.delete(localItem)
+                deletedCount += 1
+            }
+        }
+        
         do {
             try context.save()
             
@@ -139,7 +157,7 @@ class CloudKitManager: ObservableObject {
                 context.refreshAllObjects()
             }
             
-            print("✅ [iOS Smart Merge] Reconciliation complete - Reconciled: \(reconciledCount), New: \(newItemsCount), Conflicts: \(conflictCount)")
+            print("✅ [iOS Smart Merge] Reconciliation complete - Reconciled: \(reconciledCount), New: \(newItemsCount), Deleted: \(deletedCount), Conflicts: \(conflictCount)")
         } catch {
             print("❌ [iOS Smart Merge] Failed to save reconciled items: \(error)")
         }
@@ -334,6 +352,19 @@ class CloudKitManager: ObservableObject {
         return try? context.fetch(request).first
     }
     
+    private func getAllLocalItems() -> [ClipboardItem] {
+        let context = persistenceController.container.viewContext
+        let request: NSFetchRequest<ClipboardItem> = ClipboardItem.fetchRequest()
+        request.predicate = NSPredicate(format: "markedAsDeleted == NO")
+        
+        do {
+            return try context.fetch(request)
+        } catch {
+            print("❌ [iOS Deletion Sync] Failed to fetch local items: \(error)")
+            return []
+        }
+    }
+    
     private func updateLocalItem(_ localItem: ClipboardItem, from cloudItem: ClipboardItem) {
         localItem.content = cloudItem.content
         localItem.contentType = cloudItem.contentType
@@ -420,6 +451,32 @@ class CloudKitManager: ObservableObject {
     /// Get offline queue status (always returns 0 for iOS since no pushing)
     func getOfflineQueueStatus() -> (count: Int, oldestOperation: Date?) {
         return (count: 0, oldestOperation: nil)
+    }
+    
+    // MARK: - iOS Deletion Operations
+    
+    /// Delete an item from iCloud (iOS can delete even though it's read-only for creation)
+    func deleteItem(id: UUID) async throws {
+        guard isConnected else {
+            print("📵 [iOS CloudKit] Offline - cannot delete from iCloud: \(id)")
+            throw CloudKitError.notConnected
+        }
+        
+        let recordID = CKRecord.ID(recordName: id.uuidString)
+        
+        do {
+            try await privateDatabase.deleteRecord(withID: recordID)
+            print("✅ [iOS CloudKit] Successfully deleted item from iCloud: \(id)")
+        } catch {
+            // Handle the case where the record doesn't exist on the server
+            if let ckError = error as? CKError, ckError.code == .unknownItem {
+                print("ℹ️ [iOS CloudKit] Item already deleted from iCloud: \(id)")
+                return // This is not an error - item is already gone
+            }
+            
+            print("❌ [iOS CloudKit] Failed to delete item from iCloud: \(error)")
+            throw CloudKitError.deleteFailure(error)
+        }
     }
 }
 

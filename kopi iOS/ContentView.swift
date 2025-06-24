@@ -231,25 +231,16 @@ struct ClipboardHistoryView: View {
 
     private func deleteItem(_ item: ClipboardItem) {
         withAnimation {
-            viewContext.delete(item)
-            
-            do {
-                try viewContext.save()
-            } catch {
-                print("Error deleting item: \(error)")
-            }
+            // Use ClipboardService which handles CloudKit deletion
+            clipboardService.deleteClipboardItem(item)
         }
     }
     
     private func clearAllItems() {
         withAnimation {
-            clipboardItems.forEach(viewContext.delete)
-            
-            do {
-                try viewContext.save()
-            } catch {
-                print("Error clearing clipboard items: \(error)")
-            }
+            // Use ClipboardService which handles CloudKit deletion
+            let allItems = Array(clipboardItems)
+            clipboardService.deleteClipboardItems(allItems)
         }
     }
     
@@ -328,14 +319,9 @@ struct ClipboardHistoryView: View {
     private func deleteSelectedItems() {
         withAnimation {
             let itemsToDelete = filteredItems.filter { selectedItems.contains($0.objectID) }
-            itemsToDelete.forEach(viewContext.delete)
-            
-            do {
-                try viewContext.save()
-                exitSelectionMode()
-            } catch {
-                print("Error deleting selected items: \(error)")
-            }
+            // Use ClipboardService which handles CloudKit deletion
+            clipboardService.deleteClipboardItems(itemsToDelete)
+            exitSelectionMode()
         }
     }
 }

@@ -115,6 +115,11 @@ struct ContentView: View {
             clipboardMonitor.forceCheck()
             refreshData()
         }
+        .onReceive(NotificationCenter.default.publisher(for: .cloudKitSyncCompleted)) { _ in
+            // Refresh UI when CloudKit sync completes (including deletions from other devices)
+            print("🔄 [macOS UI] CloudKit sync completed - refreshing UI")
+            refreshData()
+        }
         .sheet(isPresented: $showingQuickPaste) {
             QuickPasteView()
         }

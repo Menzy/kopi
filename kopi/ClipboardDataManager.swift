@@ -144,6 +144,9 @@ class ClipboardDataManager: ObservableObject {
                             self.viewContext.delete(itemToDelete)
                             self.saveContext()
                             print("✅ [macOS] Item deleted locally after CloudKit sync: \(itemId)")
+                            
+                            // Post notification to refresh UI
+                            NotificationCenter.default.post(name: .cloudKitSyncCompleted, object: nil)
                         }
                     } catch {
                         print("❌ [macOS] Failed to delete item locally: \(error)")
@@ -159,6 +162,9 @@ class ClipboardDataManager: ObservableObject {
                             self.viewContext.delete(itemToDelete)
                             self.saveContext()
                             print("⚠️ [macOS] Item deleted locally despite CloudKit sync failure: \(itemId)")
+                            
+                            // Post notification to refresh UI
+                            NotificationCenter.default.post(name: .cloudKitSyncCompleted, object: nil)
                         }
                     } catch {
                         print("❌ [macOS] Failed to delete item locally: \(error)")
@@ -229,6 +235,9 @@ class ClipboardDataManager: ObservableObject {
                 self.saveContext()
                 
                 print("✅ [macOS] Batch deletion completed for \(items.count) items - CloudKit synced: \(syncedCount), failed: \(failedCount)")
+                
+                // Post notification to refresh UI
+                NotificationCenter.default.post(name: .cloudKitSyncCompleted, object: nil)
             }
         }
     }

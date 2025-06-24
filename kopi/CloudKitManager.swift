@@ -25,6 +25,9 @@ class CloudKitManager: ObservableObject {
     private let monitor = NWPathMonitor()
     private let monitorQueue = DispatchQueue(label: "NetworkMonitor")
     
+    // Periodic sync timer
+    private var syncTimer: Timer?
+    
     // MARK: - Phase 5: Offline Queue Management
     private var offlineOperationQueue: [OfflineOperation] = []
     private let offlineQueueLock = NSLock()
@@ -37,6 +40,7 @@ class CloudKitManager: ObservableObject {
         
         setupNetworkMonitoring()
         loadOfflineQueue()
+        startPeriodicSync()
     }
     
     // MARK: - Phase 5: Enhanced Offline Queue System
@@ -357,7 +361,13 @@ class CloudKitManager: ObservableObject {
         var reconciledCount = 0
         var conflictCount = 0
         var newItemsCount = 0
+        var deletedCount = 0
         
+        // Get all local items for deletion reconciliation
+        let localItems = getAllLocalItems()
+        let cloudItemIDs = Set(cloudItems.compactMap { $0.id })
+        
+        // Process cloud items (updates and new items)
         for cloudItem in cloudItems {
             // Check if we already have this item locally
             if let existingItem = findLocalItem(with: cloudItem.id) {
@@ -393,9 +403,28 @@ class CloudKitManager: ObservableObject {
             }
         }
         
+        // Handle deletions: Remove local items that no longer exist on CloudKit
+        for localItem in localItems {
+            guard let localItemID = localItem.id else { continue }
+            
+            // If local item doesn't exist in cloud items, it was deleted on another device
+            if !cloudItemIDs.contains(localItemID) {
+                print("🗑️ [macOS Deletion Sync] Deleting local item that was removed from CloudKit: \(localItemID)")
+                context.delete(localItem)
+                deletedCount += 1
+            }
+        }
+        
         do {
             try context.save()
-            print("✅ [Smart Merge] Reconciliation complete - Reconciled: \(reconciledCount), New: \(newItemsCount), Conflicts: \(conflictCount)")
+            print("✅ [Smart Merge] Reconciliation complete - Reconciled: \(reconciledCount), New: \(newItemsCount), Deleted: \(deletedCount), Conflicts: \(conflictCount)")
+            
+            // Post notification to refresh UI if any changes were made
+            if reconciledCount > 0 || newItemsCount > 0 || deletedCount > 0 {
+                DispatchQueue.main.async {
+                    NotificationCenter.default.post(name: .cloudKitSyncCompleted, object: nil)
+                }
+            }
         } catch {
             print("❌ [Smart Merge] Failed to save reconciled items: \(error)")
         }
@@ -545,6 +574,18 @@ class CloudKitManager: ObservableObject {
         return item
     }
     
+    private func getAllLocalItems() -> [ClipboardItem] {
+        let context = persistenceController.container.viewContext
+        let request: NSFetchRequest<ClipboardItem> = ClipboardItem.fetchRequest()
+        
+        do {
+            return try context.fetch(request)
+        } catch {
+            print("❌ [macOS CloudKit] Error fetching local items: \(error)")
+            return []
+        }
+    }
+    
     private func findLocalItem(with id: UUID?) -> ClipboardItem? {
         guard let id = id else { return nil }
         
@@ -595,6 +636,11 @@ class CloudKitManager: ObservableObject {
                 if path.status == .satisfied {
                     print("🌐 [CloudKit] Network connected")
                     
+                    // Resume periodic sync when connected
+                    if self?.syncTimer == nil {
+                        self?.startPeriodicSync()
+                    }
+                    
                     if !wasConnected {
                         // Coming back online - process offline queue and perform full sync
                         await self?.handleReconnection()
@@ -604,6 +650,8 @@ class CloudKitManager: ObservableObject {
                     }
                 } else {
                     print("📵 [CloudKit] Network disconnected - operations will be queued")
+                    // Keep sync timer running to detect when network comes back
+                    // Timer will just queue operations when offline
                 }
             }
         }
@@ -673,6 +721,23 @@ class CloudKitManager: ObservableObject {
         await performFullReconciliationSync()
     }
     
+    /// Update sync frequency (useful for testing or performance tuning)
+    func updateSyncInterval(_ interval: TimeInterval) {
+        stopPeriodicSync()
+        
+        syncTimer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] _ in
+            Task {
+                await self?.syncFromCloud()
+            }
+        }
+        
+        if let timer = syncTimer {
+            RunLoop.main.add(timer, forMode: .common)
+        }
+        
+        print("🔄 [macOS CloudKit] Updated sync interval to \(interval) seconds")
+    }
+    
     /// Get offline queue status
     func getOfflineQueueStatus() -> (count: Int, oldestOperation: Date?) {
         offlineQueueLock.lock()
@@ -682,6 +747,36 @@ class CloudKitManager: ObservableObject {
         let oldestDate = offlineOperationQueue.min(by: { $0.timestamp < $1.timestamp })?.timestamp
         
         return (count: count, oldestOperation: oldestDate)
+    }
+    
+    // MARK: - Periodic Sync Management
+    
+    private func startPeriodicSync() {
+        // Start periodic sync every 10 seconds for responsive deletion detection
+        syncTimer = Timer.scheduledTimer(withTimeInterval: 10.0, repeats: true) { [weak self] _ in
+            Task {
+                await self?.syncFromCloud()
+            }
+        }
+        
+        // Add timer to run loop to ensure it continues running
+        if let timer = syncTimer {
+            RunLoop.main.add(timer, forMode: .common)
+        }
+        
+        print("🔄 [macOS CloudKit] Started periodic sync - checking iCloud every 10 seconds")
+    }
+    
+    private func stopPeriodicSync() {
+        syncTimer?.invalidate()
+        syncTimer = nil
+        print("⏹️ [macOS CloudKit] Stopped periodic sync")
+    }
+    
+    deinit {
+        syncTimer?.invalidate()
+        syncTimer = nil
+        monitor.cancel()
     }
 }
 
@@ -711,4 +806,10 @@ enum CloudKitError: LocalizedError {
             return "Failed to subscribe to CloudKit: \(error.localizedDescription)"
         }
     }
-} 
+}
+
+// MARK: - Notification Names
+
+extension Notification.Name {
+    static let cloudKitSyncCompleted = Notification.Name("cloudKitSyncCompleted")
+}

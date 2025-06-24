@@ -71,8 +71,8 @@ class ClipboardService: ObservableObject, @unchecked Sendable {
     
     private func setupSyncClient() {
         // Phase 4: iPhone acts as sync client - pulls from iCloud periodically
-        // Reduced frequency from 5 seconds to 30 seconds for better performance
-        syncTimer = Timer.scheduledTimer(withTimeInterval: 30.0, repeats: true) { [weak self] _ in
+        // Reduced frequency to 10 seconds for responsive sync
+        syncTimer = Timer.scheduledTimer(withTimeInterval: 10.0, repeats: true) { [weak self] _ in
             Task {
                 await self?.performSyncFromCloud()
             }
@@ -83,7 +83,7 @@ class ClipboardService: ObservableObject, @unchecked Sendable {
             await performSyncFromCloud()
         }
         
-        print("📱 [iOS] Sync client started - pulling from iCloud every 30 seconds")
+        print("📱 [iOS] Sync client started - pulling from iCloud every 10 seconds")
     }
     
     private func stopSyncClient() {
@@ -100,7 +100,7 @@ class ClipboardService: ObservableObject, @unchecked Sendable {
         print("📥 [iPhone Sync Client] Starting sync from iCloud...")
         
         // Check if we just came back online
-        if cloudKitManager.isConnected && (lastSyncDate == nil || Date().timeIntervalSince(lastSyncDate!) > 300) {
+        if cloudKitManager.isConnected && (lastSyncDate == nil || Date().timeIntervalSince(lastSyncDate!) > 30) {
             // Perform full reconciliation sync if it's been a while or first sync
             print("🔄 [iPhone Sync Client] Performing full reconciliation sync")
             await cloudKitManager.forceFullSync()
@@ -287,7 +287,7 @@ class ClipboardService: ObservableObject, @unchecked Sendable {
     
     private func scheduleBackgroundProcessing() {
         let request = BGAppRefreshTaskRequest(identifier: backgroundTaskIdentifier)
-        request.earliestBeginDate = Date(timeIntervalSinceNow: 15 * 60) // 15 minutes
+        request.earliestBeginDate = Date(timeIntervalSinceNow: 5 * 60) // 5 minutes
         
         // BGTaskScheduler.shared.submit() doesn't throw, so no try/catch needed
         do {
@@ -385,6 +385,124 @@ class ClipboardService: ObservableObject, @unchecked Sendable {
         }
         
         print("📋 [iPhone Sync Client] Copied to clipboard: \(content.prefix(50))...")
+    }
+    
+    // MARK: - iOS Deletion Operations
+    
+    /// Delete a single item from both CloudKit and local storage
+    func deleteClipboardItem(_ item: ClipboardItem) {
+        let itemId = item.id?.uuidString ?? "unknown"
+        let content = item.content?.prefix(50) ?? "no content"
+        print("🗑️ [iOS] Deleting clipboard item: \(itemId) - \(content)")
+        
+        // Capture the object ID before any modifications
+        let objectID = item.objectID
+        let persistenceController = PersistenceController.shared
+        
+        // Delete from CloudKit first, then delete locally
+        Task {
+            do {
+                // Use CloudKit delete API if we have an ID and are connected
+                if let itemUUID = item.id {
+                    try await cloudKitManager.deleteItem(id: itemUUID)
+                    print("✅ [iOS CloudKit] Deletion synced to iCloud: \(itemId)")
+                } else {
+                    print("❌ [iOS] Cannot delete from CloudKit - item missing ID: \(itemId)")
+                }
+                
+                // Delete locally after successful CloudKit sync
+                await MainActor.run {
+                    do {
+                        let itemToDelete = try persistenceController.container.viewContext.existingObject(with: objectID) as? ClipboardItem
+                        if let itemToDelete = itemToDelete {
+                            persistenceController.container.viewContext.delete(itemToDelete)
+                            try persistenceController.container.viewContext.save()
+                            print("✅ [iOS] Item deleted locally after CloudKit sync: \(itemId)")
+                        }
+                    } catch {
+                        print("❌ [iOS] Failed to delete item locally: \(error)")
+                    }
+                }
+            } catch {
+                print("❌ [iOS CloudKit] Failed to sync deletion: \(error)")
+                // Still delete locally even if CloudKit sync fails
+                await MainActor.run {
+                    do {
+                        let itemToDelete = try persistenceController.container.viewContext.existingObject(with: objectID) as? ClipboardItem
+                        if let itemToDelete = itemToDelete {
+                            persistenceController.container.viewContext.delete(itemToDelete)
+                            try persistenceController.container.viewContext.save()
+                            print("⚠️ [iOS] Item deleted locally despite CloudKit sync failure: \(itemId)")
+                        }
+                    } catch {
+                        print("❌ [iOS] Failed to delete item locally: \(error)")
+                    }
+                }
+            }
+        }
+    }
+    
+    /// Delete multiple items from both CloudKit and local storage
+    func deleteClipboardItems(_ items: [ClipboardItem]) {
+        print("🗑️ [iOS] Batch deleting \(items.count) clipboard items")
+        
+        // Capture object IDs and item info before any modifications
+        let itemsInfo = items.map { item in
+            return (
+                objectID: item.objectID,
+                itemId: item.id?.uuidString ?? "unknown",
+                content: item.content?.prefix(30) ?? "no content",
+                uuid: item.id
+            )
+        }
+        
+        let persistenceController = PersistenceController.shared
+        
+        // Delete from CloudKit and then locally
+        Task {
+            var syncedCount = 0
+            var failedCount = 0
+            
+            for info in itemsInfo {
+                print("   - Deleting: \(info.itemId) - \(info.content)")
+                
+                do {
+                    // Use CloudKit delete API if we have an ID and are connected
+                    if let itemUUID = info.uuid {
+                        try await cloudKitManager.deleteItem(id: itemUUID)
+                        print("     ✅ [iOS CloudKit] Deletion synced: \(info.itemId)")
+                        syncedCount += 1
+                    } else {
+                        print("     ❌ [iOS] Cannot delete from CloudKit - item missing ID: \(info.itemId)")
+                        failedCount += 1
+                    }
+                } catch {
+                    print("     ❌ [iOS CloudKit] Failed to sync deletion: \(error)")
+                    failedCount += 1
+                }
+            }
+            
+            // Delete all items locally after CloudKit sync attempts
+            await MainActor.run {
+                for info in itemsInfo {
+                    do {
+                        let itemToDelete = try persistenceController.container.viewContext.existingObject(with: info.objectID) as? ClipboardItem
+                        if let itemToDelete = itemToDelete {
+                            persistenceController.container.viewContext.delete(itemToDelete)
+                        }
+                    } catch {
+                        print("❌ [iOS] Failed to delete item locally: \(info.itemId) - \(error)")
+                    }
+                }
+                
+                do {
+                    try persistenceController.container.viewContext.save()
+                    print("✅ [iOS] Batch deletion completed for \(items.count) items - CloudKit synced: \(syncedCount), failed: \(failedCount)")
+                } catch {
+                    print("❌ [iOS] Failed to save deletion changes: \(error)")
+                }
+            }
+        }
     }
     
     // MARK: - Helper Methods
