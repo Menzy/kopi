@@ -17,72 +17,88 @@ struct ClipboardPreviewPopover: View {
     @State private var editedContent = ""
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            // Header with title and edit button
-            HStack {
-                Text(previewTitle)
-                    .font(.headline)
-                    .foregroundColor(.primary)
-                
-                Spacer()
-                
-                // Only show edit button for text content
-                if ContentType(rawValue: item.contentType ?? "text") == .text {
-                    Button(action: {
-                        if isEditing {
-                            saveChanges()
-                        } else {
-                            startEditing()
-                        }
-                    }) {
-                        Text(isEditing ? "Save" : "Edit")
-                            .font(.system(.caption, weight: .medium))
-                            .foregroundColor(.accentColor)
-                    }
-                    .buttonStyle(PlainButtonStyle())
+        let contentType = ContentType(rawValue: item.contentType ?? "text") ?? .text
+        
+        Group {
+            if contentType == .url {
+                if let urlString = item.content, let url = URL(string: urlString) {
+                    WebView(url: url)
+                } else {
+                    Text("Invalid URL")
+                        .padding()
                 }
-            }
-            
-            Divider()
-            
-            // Content preview (larger version)
-            contentPreview
-                .frame(maxHeight: 400) // Increased from 200 to 400
-            
-            Divider()
-            
-            // Footer with source app and copy button
-            HStack {
-                // Source app info
-                HStack(spacing: 6) {
-                    if let iconData = item.sourceAppIcon,
-                       let nsImage = NSImage(data: iconData) {
-                        Image(nsImage: nsImage)
-                            .resizable()
-                            .frame(width: 16, height: 16)
-                            .clipShape(RoundedRectangle(cornerRadius: 3))
+            } else {
+                VStack(alignment: .leading, spacing: 12) {
+                    // Header with title and edit button
+                    HStack {
+                        Text(previewTitle)
+                            .font(.headline)
+                            .foregroundColor(.primary)
+                        
+                        Spacer()
+                        
+                        // Only show edit button for text content
+                        if contentType == .text {
+                            Button(action: {
+                                if isEditing {
+                                    saveChanges()
+                                } else {
+                                    startEditing()
+                                }
+                            }) {
+                                Text(isEditing ? "Save" : "Edit")
+                                    .font(.system(.caption, weight: .medium))
+                                    .foregroundColor(.accentColor)
+                            }
+                            .buttonStyle(PlainButtonStyle())
+                        }
                     }
                     
-                    Text("From \(item.sourceAppName ?? "Unknown")")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
+                    Divider()
+                    
+                    // Content preview (larger version)
+                    contentPreview
+                        .frame(maxHeight: 400)
+                    
+                    Divider()
+                    
+                    // Footer with source app and copy button
+                    HStack {
+                        // Source app info
+                        HStack(spacing: 6) {
+                            if let iconData = item.sourceAppIcon,
+                               let nsImage = NSImage(data: iconData) {
+                                Image(nsImage: nsImage)
+                                    .resizable()
+                                    .frame(width: 16, height: 16)
+                                    .clipShape(RoundedRectangle(cornerRadius: 3))
+                            }
+                            
+                            Text("From \(item.sourceAppName ?? "Unknown")")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                        
+                        Spacer()
+                        
+                        // Copy button
+                        Button("Copy") {
+                            copyToClipboard()
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                    }
                 }
-                
-                Spacer()
-                
-                // Copy button
-                Button("Copy") {
-                    copyToClipboard()
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
+                .padding(16)
+                .frame(width: 480)
             }
         }
-        .padding(16) // Increased from 12 to 16
-        .frame(width: 480) // Increased from 320 to 480
+        .frame(width: contentType == .url ? 800 : 480, height: contentType == .url ? 600 : nil)
         .background(Color(NSColor.windowBackgroundColor))
         .onAppear {
-            editedContent = item.content ?? ""
+            if contentType != .url {
+                 editedContent = item.content ?? ""
+            }
         }
     }
     
@@ -138,9 +154,14 @@ struct ClipboardPreviewPopover: View {
                         .cornerRadius(6)
                     
                     // Link preview (larger version for preview window)
-                    LinkPreviewCard(url: content, isCompact: false)
-                        .frame(height: 300)
-                        .cornerRadius(8)
+                    if let url = URL(string: content) {
+                        WebView(url: url)
+                            .frame(height: 300)
+                            .cornerRadius(8)
+                    } else {
+                        Text("Invalid URL")
+                            .frame(height: 300)
+                    }
                 }
                 
             case .image:
@@ -262,6 +283,40 @@ struct ClipboardPreviewPopover: View {
     }
 }
 
+// MARK: - WebView Component
+
+struct WebView: NSViewRepresentable {
+    let url: URL?
+    
+    func makeNSView(context: Context) -> WKWebView {
+        let webView = WKWebView()
+        webView.navigationDelegate = context.coordinator
+        webView.allowsBackForwardNavigationGestures = true
+        return webView
+    }
+    
+    func updateNSView(_ nsView: WKWebView, context: Context) {
+        if let url = url, nsView.url != url {
+            let request = URLRequest(url: url)
+            nsView.load(request)
+        }
+    }
+    
+    func makeCoordinator() -> Coordinator {
+        Coordinator()
+    }
+    
+    class Coordinator: NSObject, WKNavigationDelegate {
+        func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+            // Handle loading errors gracefully
+            let errorHTML = """
+            <html><head><style>body{font-family:-apple-system,sans-serif;display:flex;justify-content:center;align-items:center;height:100vh;margin:0;background-color:#f5f5f5;color:#666;text-align:center;} .error-container{padding:20px;} .error-icon{font-size:48px;margin-bottom:16px;}</style></head><body><div class="error-container"><div class="error-icon">🌐</div><div>Unable to load webpage</div></div></body></html>
+            """
+            webView.loadHTMLString(errorHTML, baseURL: nil)
+        }
+    }
+}
+
 // MARK: - Legacy ClipboardPreviewWindow (kept for compatibility)
 
 struct ClipboardPreviewWindow: View {
@@ -278,83 +333,3 @@ struct ClipboardPreviewWindow: View {
         )
     }
 }
-
-// MARK: - WebView Component (kept for future use)
-
-struct WebView: NSViewRepresentable {
-    let url: URL?
-    
-    func makeNSView(context: Context) -> WKWebView {
-        let webView = WKWebView()
-        webView.navigationDelegate = context.coordinator
-        return webView
-    }
-    
-    func updateNSView(_ nsView: WKWebView, context: Context) {
-        if let url = url {
-            let request = URLRequest(url: url)
-            nsView.load(request)
-        }
-    }
-    
-    func makeCoordinator() -> Coordinator {
-        Coordinator()
-    }
-    
-    class Coordinator: NSObject, WKNavigationDelegate {
-        func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
-            // Handle loading errors gracefully
-            let errorHTML = """
-            <html>
-            <head>
-                <style>
-                    body {
-                        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-                        display: flex;
-                        justify-content: center;
-                        align-items: center;
-                        height: 100vh;
-                        margin: 0;
-                        background-color: #f5f5f5;
-                        color: #666;
-                    }
-                    .error-container {
-                        text-align: center;
-                        max-width: 400px;
-                        padding: 40px;
-                    }
-                    .error-icon {
-                        font-size: 48px;
-                        margin-bottom: 16px;
-                    }
-                    .error-title {
-                        font-size: 18px;
-                        font-weight: 600;
-                        margin-bottom: 8px;
-                        color: #333;
-                    }
-                    .error-message {
-                        font-size: 14px;
-                        line-height: 1.4;
-                    }
-                </style>
-            </head>
-            <body>
-                <div class="error-container">
-                    <div class="error-icon">🌐</div>
-                    <div class="error-title">Unable to load webpage</div>
-                    <div class="error-message">The URL could not be loaded. Please check if the URL is valid and accessible.</div>
-                </div>
-            </body>
-            </html>
-            """
-            webView.loadHTMLString(errorHTML, baseURL: nil)
-        }
-    }
-}
-
-
-
-
-
- 

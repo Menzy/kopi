@@ -123,13 +123,25 @@ struct ClipboardHistoryView: View {
                                     }
                                 }
                                 .contextMenu {
-                                    if !isSelectionMode {
-                                        Button("Copy") {
-                                            copyItem(item)
+                                    if item.contentType == ContentType.url.rawValue, let urlString = item.content, let url = URL(string: urlString) {
+                                        Button("Open in Browser", systemImage: "safari") {
+                                            UIApplication.shared.open(url)
                                         }
-                                        Button("Delete", role: .destructive) {
-                                            deleteItem(item)
-                                        }
+                                    }
+
+                                    Button("Select", systemImage: "checkmark.circle") {
+                                        enterSelectionMode()
+                                        toggleSelection(for: item)
+                                    }
+
+                                    Divider()
+
+                                    Button("Copy", systemImage: "doc.on.doc") {
+                                        copyItem(item)
+                                    }
+                                    
+                                    Button("Delete", systemImage: "trash", role: .destructive) {
+                                        deleteItem(item)
                                     }
                                 }
                             }

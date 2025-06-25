@@ -7,6 +7,7 @@
 
 import SwiftUI
 import AppKit
+import LinkPresentation
 
 // MARK: - Link Preview Data Model
 
@@ -16,6 +17,7 @@ struct LinkPreviewData {
     let imageURL: String?
     let siteName: String?
     let url: String
+    var image: NSImage?
 }
 
 // MARK: - Link Preview Card Component for macOS
@@ -54,18 +56,26 @@ struct LinkPreviewCard: View {
                 // Preview content
                 VStack(alignment: .leading, spacing: isExtraCompact ? 3 : (isCompact ? 6 : 12)) {
                     // Thumbnail
-                    AsyncImage(url: URL(string: preview.imageURL ?? "")) { image in
-                        image
-                            .resizable()
-                            .aspectRatio(contentMode: .fill)
-                    } placeholder: {
-                        RoundedRectangle(cornerRadius: isExtraCompact ? 3 : (isCompact ? 4 : 8))
-                            .fill(Color(NSColor.controlBackgroundColor))
-                            .overlay(
-                                Image(systemName: "photo")
-                                    .foregroundColor(.secondary)
-                                    .font(isExtraCompact ? .caption2 : (isCompact ? .caption2 : .title2))
-                            )
+                    Group {
+                        if let image = preview.image {
+                            Image(nsImage: image)
+                                .resizable()
+                                .aspectRatio(contentMode: .fill)
+                        } else {
+                            AsyncImage(url: URL(string: preview.imageURL ?? "")) { image in
+                                image
+                                    .resizable()
+                                    .aspectRatio(contentMode: .fill)
+                            } placeholder: {
+                                RoundedRectangle(cornerRadius: isExtraCompact ? 3 : (isCompact ? 4 : 8))
+                                    .fill(Color(NSColor.controlBackgroundColor))
+                                    .overlay(
+                                        Image(systemName: "photo")
+                                            .foregroundColor(.secondary)
+                                            .font(isExtraCompact ? .caption2 : (isCompact ? .caption2 : .title2))
+                                    )
+                            }
+                        }
                     }
                     .frame(maxWidth: .infinity)
                     .frame(height: isExtraCompact ? 40 : (isCompact ? 60 : 180))
@@ -147,15 +157,37 @@ struct LinkPreviewCard: View {
             isLoading = false
             return
         }
-        
+
+        let provider = LPMetadataProvider()
         Task {
             do {
-                let (data, _) = try await URLSession.shared.data(from: url)
-                let html = String(data: data, encoding: .utf8) ?? ""
-                let preview = parseLinkPreview(from: html, url: self.url)
-                
+                let metadata = try await provider.startFetchingMetadata(for: url)
+                let imageProvider = metadata.imageProvider
+                var displayImage: NSImage?
+
+                if let imageProvider = imageProvider {
+                    displayImage = try await withCheckedThrowingContinuation { continuation in
+                        imageProvider.loadObject(ofClass: NSImage.self) { image, error in
+                            if let error = error {
+                                continuation.resume(throwing: error)
+                            } else {
+                                continuation.resume(returning: image as? NSImage)
+                            }
+                        }
+                    }
+                }
+
+                let data = LinkPreviewData(
+                    title: metadata.title,
+                    description: nil, // Description is not directly available in LPLinkMetadata
+                    imageURL: nil, // We get the image directly, not the URL
+                    siteName: metadata.url?.host,
+                    url: metadata.originalURL?.absoluteString ?? self.url,
+                    image: displayImage
+                )
+
                 await MainActor.run {
-                    self.previewData = preview
+                    self.previewData = data
                     self.isLoading = false
                 }
             } catch {
@@ -164,69 +196,5 @@ struct LinkPreviewCard: View {
                 }
             }
         }
-    }
-    
-    private func parseLinkPreview(from html: String, url: String) -> LinkPreviewData {
-        // Simple HTML parsing for Open Graph tags
-        var title: String?
-        var description: String?
-        var imageURL: String?
-        var siteName: String?
-        
-        // Extract title
-        if let titleRange = html.range(of: "<title[^>]*>([^<]+)</title>", options: .regularExpression) {
-            let titleMatch = String(html[titleRange])
-            title = titleMatch.replacingOccurrences(of: #"<title[^>]*>"#, with: "", options: .regularExpression)
-                .replacingOccurrences(of: "</title>", with: "")
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-        }
-        
-        // Extract Open Graph title (preferred)
-        if let ogTitleRange = html.range(of: #"<meta[^>]*property=["\']og:title["\'][^>]*content=["\']([^"\']*)["\']"#, options: .regularExpression) {
-            let match = String(html[ogTitleRange])
-            if let contentRange = match.range(of: #"content=["\']([^"\']*)["\']"#, options: .regularExpression) {
-                let contentMatch = String(match[contentRange])
-                title = contentMatch.replacingOccurrences(of: #"content=["\']"#, with: "", options: .regularExpression)
-                    .replacingOccurrences(of: #"["\']$"#, with: "", options: .regularExpression)
-            }
-        }
-        
-        // Extract Open Graph description
-        if let ogDescRange = html.range(of: #"<meta[^>]*property=["\']og:description["\'][^>]*content=["\']([^"\']*)["\']"#, options: .regularExpression) {
-            let match = String(html[ogDescRange])
-            if let contentRange = match.range(of: #"content=["\']([^"\']*)["\']"#, options: .regularExpression) {
-                let contentMatch = String(match[contentRange])
-                description = contentMatch.replacingOccurrences(of: #"content=["\']"#, with: "", options: .regularExpression)
-                    .replacingOccurrences(of: #"["\']$"#, with: "", options: .regularExpression)
-            }
-        }
-        
-        // Extract Open Graph image
-        if let ogImageRange = html.range(of: #"<meta[^>]*property=["\']og:image["\'][^>]*content=["\']([^"\']*)["\']"#, options: .regularExpression) {
-            let match = String(html[ogImageRange])
-            if let contentRange = match.range(of: #"content=["\']([^"\']*)["\']"#, options: .regularExpression) {
-                let contentMatch = String(match[contentRange])
-                imageURL = contentMatch.replacingOccurrences(of: #"content=["\']"#, with: "", options: .regularExpression)
-                    .replacingOccurrences(of: #"["\']$"#, with: "", options: .regularExpression)
-            }
-        }
-        
-        // Extract site name
-        if let ogSiteRange = html.range(of: #"<meta[^>]*property=["\']og:site_name["\'][^>]*content=["\']([^"\']*)["\']"#, options: .regularExpression) {
-            let match = String(html[ogSiteRange])
-            if let contentRange = match.range(of: #"content=["\']([^"\']*)["\']"#, options: .regularExpression) {
-                let contentMatch = String(match[contentRange])
-                siteName = contentMatch.replacingOccurrences(of: #"content=["\']"#, with: "", options: .regularExpression)
-                    .replacingOccurrences(of: #"["\']$"#, with: "", options: .regularExpression)
-            }
-        }
-        
-        return LinkPreviewData(
-            title: title,
-            description: description,
-            imageURL: imageURL,
-            siteName: siteName,
-            url: url
-        )
     }
 }
