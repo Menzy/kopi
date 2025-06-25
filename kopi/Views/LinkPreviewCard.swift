@@ -23,69 +23,71 @@ struct LinkPreviewData {
 struct LinkPreviewCard: View {
     let url: String
     let isCompact: Bool
+    let isExtraCompact: Bool
     @State private var previewData: LinkPreviewData?
     @State private var isLoading = true
     
-    init(url: String, isCompact: Bool = true) {
+    init(url: String, isCompact: Bool = true, isExtraCompact: Bool = false) {
         self.url = url
         self.isCompact = isCompact
+        self.isExtraCompact = isExtraCompact
     }
     
     var body: some View {
-        VStack(alignment: .leading, spacing: isCompact ? 6 : 12) {
+        VStack(alignment: .leading, spacing: isExtraCompact ? 3 : (isCompact ? 6 : 12)) {
             if isLoading {
                 // Loading state
-                RoundedRectangle(cornerRadius: isCompact ? 6 : 8)
+                RoundedRectangle(cornerRadius: isExtraCompact ? 4 : (isCompact ? 6 : 8))
                     .fill(Color(NSColor.controlBackgroundColor))
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .overlay(
-                        VStack(spacing: isCompact ? 6 : 12) {
+                        VStack(spacing: isExtraCompact ? 3 : (isCompact ? 6 : 12)) {
                             ProgressView()
-                                .scaleEffect(isCompact ? 0.7 : 1.0)
-                                .controlSize(isCompact ? .small : .regular)
+                                .scaleEffect(isExtraCompact ? 0.5 : (isCompact ? 0.7 : 1.0))
+                                .controlSize(isExtraCompact ? .mini : (isCompact ? .small : .regular))
                             Text("Loading preview...")
-                                .font(isCompact ? .caption2 : .body)
+                                .font(isExtraCompact ? .caption2 : (isCompact ? .caption2 : .body))
                                 .foregroundColor(.secondary)
                         }
                     )
             } else if let preview = previewData {
                 // Preview content
-                VStack(alignment: .leading, spacing: isCompact ? 6 : 12) {
+                VStack(alignment: .leading, spacing: isExtraCompact ? 3 : (isCompact ? 6 : 12)) {
                     // Thumbnail
                     AsyncImage(url: URL(string: preview.imageURL ?? "")) { image in
                         image
                             .resizable()
                             .aspectRatio(contentMode: .fill)
                     } placeholder: {
-                        RoundedRectangle(cornerRadius: isCompact ? 4 : 8)
+                        RoundedRectangle(cornerRadius: isExtraCompact ? 3 : (isCompact ? 4 : 8))
                             .fill(Color(NSColor.controlBackgroundColor))
                             .overlay(
                                 Image(systemName: "photo")
                                     .foregroundColor(.secondary)
-                                    .font(isCompact ? .caption2 : .title2)
+                                    .font(isExtraCompact ? .caption2 : (isCompact ? .caption2 : .title2))
                             )
                     }
                     .frame(maxWidth: .infinity)
-                    .frame(height: isCompact ? 60 : 180)
-                    .clipShape(RoundedRectangle(cornerRadius: isCompact ? 4 : 8))
+                    .frame(height: isExtraCompact ? 40 : (isCompact ? 60 : 180))
+                    .clipShape(RoundedRectangle(cornerRadius: isExtraCompact ? 3 : (isCompact ? 4 : 8)))
                     
                     // Content
-                    VStack(alignment: .leading, spacing: isCompact ? 2 : 8) {
+                    VStack(alignment: .leading, spacing: isExtraCompact ? 1 : (isCompact ? 2 : 8)) {
                         Text(preview.title ?? "Link")
-                            .font(isCompact ? .caption : .headline)
-                            .fontWeight(isCompact ? .medium : .semibold)
-                            .lineLimit(isCompact ? 2 : 3)
+                            .font(isExtraCompact ? .caption2 : (isCompact ? .caption : .headline))
+                            .fontWeight(isExtraCompact ? .medium : (isCompact ? .medium : .semibold))
+                            .lineLimit(isExtraCompact ? 1 : (isCompact ? 2 : 3))
                         
-                        if let description = preview.description {
+                        if let description = preview.description, !isExtraCompact {
                             Text(description)
                                 .font(isCompact ? .caption2 : .body)
                                 .foregroundColor(.secondary)
                                 .lineLimit(isCompact ? 2 : 4)
                         }
                         
-                        if isCompact {
+                        if isCompact || isExtraCompact {
                             Text(URL(string: url)?.host ?? url)
-                                .font(.caption2)
+                                .font(isExtraCompact ? .caption2 : .caption2)
                                 .foregroundColor(.secondary)
                                 .lineLimit(1)
                         } else {
@@ -111,26 +113,26 @@ struct LinkPreviewCard: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             } else {
                 // Error state - fallback to simple URL display
-                VStack(alignment: .leading, spacing: isCompact ? 4 : 12) {
+                VStack(alignment: .leading, spacing: isExtraCompact ? 2 : (isCompact ? 4 : 12)) {
                     HStack {
                         Image(systemName: "link")
                             .foregroundColor(.blue)
-                            .font(isCompact ? .caption2 : .title2)
-                        Text(isCompact ? "Link" : "Link Preview")
-                            .font(isCompact ? .caption : .headline)
-                            .fontWeight(isCompact ? .medium : .semibold)
+                            .font(isExtraCompact ? .caption2 : (isCompact ? .caption2 : .title2))
+                        Text(isExtraCompact ? "Link" : (isCompact ? "Link" : "Link Preview"))
+                            .font(isExtraCompact ? .caption2 : (isCompact ? .caption : .headline))
+                            .fontWeight(isExtraCompact ? .medium : (isCompact ? .medium : .semibold))
                     }
                     
-                    if !isCompact {
+                    if !isCompact && !isExtraCompact {
                         Text("Unable to load preview for this URL")
                             .font(.body)
                             .foregroundColor(.secondary)
                     }
                     
                     Text(URL(string: url)?.host ?? url)
-                        .font(isCompact ? .caption2 : .caption)
+                        .font(isExtraCompact ? .caption2 : (isCompact ? .caption2 : .caption))
                         .foregroundColor(.secondary)
-                        .lineLimit(2)
+                        .lineLimit(isExtraCompact ? 1 : 2)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             }
@@ -227,4 +229,4 @@ struct LinkPreviewCard: View {
             url: url
         )
     }
-} 
+}

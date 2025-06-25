@@ -38,8 +38,8 @@ class MenuBarManager: NSObject, ObservableObject {
             
             // Set up the button
             if let button = statusItem.button {
-                // Use clipboard icon
-                button.image = NSImage(systemSymbolName: "clipboard", accessibilityDescription: "Clipboard")
+                // Use kopiMenu icon
+                button.image = NSImage(named: "kopiMenu")
                 button.action = #selector(self.handleButtonClick)
                 button.target = self
                 button.toolTip = "Show Kopi Clipboard"
@@ -291,4 +291,4 @@ extension MenuBarManager: NSWindowDelegate {
         }
         return true
     }
-} 
+}

@@ -70,7 +70,7 @@ struct ClipboardItemCard: View {
                             .multilineTextAlignment(.leading)
                         
                     case .url:
-                        LinkPreviewCard(url: content, isCompact: true)
+                        LinkPreviewCard(url: content, isCompact: true, isExtraCompact: true)
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
                         
                     case .image:
