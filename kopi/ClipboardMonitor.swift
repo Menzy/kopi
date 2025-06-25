@@ -12,6 +12,11 @@ import Cocoa
 import CoreData
 import UniformTypeIdentifiers
 
+// MARK: - Notifications
+extension Notification.Name {
+    static let clipboardDidChange = Notification.Name("clipboardDidChange")
+}
+
 class ClipboardMonitor: ObservableObject {
     static let shared = ClipboardMonitor()
     
@@ -234,6 +239,9 @@ class ClipboardMonitor: ObservableObject {
             DispatchQueue.main.async {
                 self.lastClipboardContent = clipboardContent.content
                 self.clipboardDidChange.toggle() // Trigger UI refresh
+                
+                // Post notification for horizontal pinboard
+                NotificationCenter.default.post(name: .clipboardDidChange, object: nil)
             }
         }
     }

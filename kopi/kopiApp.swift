@@ -14,6 +14,7 @@ struct kopiApp: App {
     @StateObject private var clipboardMonitor = ClipboardMonitor.shared
     @StateObject private var keyboardManager = KeyboardShortcutManager.shared
     @StateObject private var cloudKitManager = CloudKitManager.shared
+    @StateObject private var menuBarManager = MenuBarManager.shared
 
     var body: some Scene {
         WindowGroup {
@@ -21,6 +22,7 @@ struct kopiApp: App {
                 .environment(\.managedObjectContext, persistenceController.container.viewContext)
                 .environmentObject(clipboardMonitor)
                 .environmentObject(cloudKitManager)
+                .environmentObject(menuBarManager)
                 .onAppear {
                     setupApp()
                 }
