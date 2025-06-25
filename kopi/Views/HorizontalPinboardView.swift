@@ -11,6 +11,7 @@ struct HorizontalPinboardView: View {
     let onDismiss: () -> Void
     
     @StateObject private var dataManager = ClipboardDataManager.shared
+    @EnvironmentObject private var clipboardMonitor: ClipboardMonitor
     @State private var clipboardItems: [ClipboardItem] = []
     @State private var hoveredItem: NSManagedObjectID?
     
@@ -58,6 +59,14 @@ struct HorizontalPinboardView: View {
             refreshData()
         }
         .onReceive(NotificationCenter.default.publisher(for: .clipboardDidChange)) { _ in
+            refreshData()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .cloudKitSyncCompleted)) { _ in
+            // Refresh when CloudKit sync completes (including deletions/modifications)
+            refreshData()
+        }
+        .onChange(of: clipboardMonitor.clipboardDidChange) {
+            // Also listen to the same property that ContentView uses
             refreshData()
         }
     }

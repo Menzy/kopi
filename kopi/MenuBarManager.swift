@@ -13,43 +13,41 @@ class MenuBarManager: NSObject, ObservableObject {
     
     private var statusItem: NSStatusItem?
     private var pinboardWindow: NSWindow?
+    private var mainWindow: NSWindow?
     
     @Published var isPinboardVisible = false
+    @Published var isMainWindowVisible = false
     
     override init() {
         super.init()
         setupMenuBar()
+        
+        // Hide dock icon after menu bar is set up
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            NSApp.setActivationPolicy(.accessory)
+        }
     }
     
     private func setupMenuBar() {
-        // Create status item
-        statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
-        
-        guard let statusItem = statusItem else { return }
-        
-        // Set up the button
-        if let button = statusItem.button {
-            // Use clipboard icon
-            button.image = NSImage(systemSymbolName: "clipboard", accessibilityDescription: "Clipboard")
-            button.action = #selector(handleButtonClick)
-            button.target = self
-            button.toolTip = "Show Kopi Clipboard"
+        // Ensure we're on the main thread
+        DispatchQueue.main.async {
+            // Create status item
+            self.statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
             
-            // Enable right-click detection
-            button.sendAction(on: [.leftMouseUp, .rightMouseUp])
+            guard let statusItem = self.statusItem else { return }
+            
+            // Set up the button
+            if let button = statusItem.button {
+                // Use clipboard icon
+                button.image = NSImage(systemSymbolName: "clipboard", accessibilityDescription: "Clipboard")
+                button.action = #selector(self.handleButtonClick)
+                button.target = self
+                button.toolTip = "Show Kopi Clipboard"
+                
+                // Enable right-click detection
+                button.sendAction(on: [.leftMouseUp, .rightMouseUp])
+            }
         }
-        
-        // Create menu for right-click (but don't assign it yet)
-        createContextMenu()
-    }
-    
-    private func createContextMenu() {
-        let menu = NSMenu()
-        menu.addItem(NSMenuItem(title: "Show Pinboard", action: #selector(showPinboard), keyEquivalent: ""))
-        menu.addItem(NSMenuItem.separator())
-        menu.addItem(NSMenuItem(title: "Quit Kopi", action: #selector(quitApp), keyEquivalent: "q"))
-        
-        // Don't assign the menu to statusItem.menu - we'll show it manually
     }
     
     @objc private func handleButtonClick() {
@@ -68,12 +66,28 @@ class MenuBarManager: NSObject, ObservableObject {
         guard let statusItem = statusItem, let button = statusItem.button else { return }
         
         let menu = NSMenu()
-        let showItem = NSMenuItem(title: isPinboardVisible ? "Hide Pinboard" : "Show Pinboard", 
-                                 action: #selector(togglePinboard), keyEquivalent: "")
-        showItem.target = self
-        menu.addItem(showItem)
+        
+        // Show/Hide Pinboard option
+        let pinboardItem = NSMenuItem(
+            title: isPinboardVisible ? "Hide Pinboard" : "Show Pinboard", 
+            action: #selector(togglePinboard), 
+            keyEquivalent: ""
+        )
+        pinboardItem.target = self
+        menu.addItem(pinboardItem)
+        
+        // Show Main Window option
+        let mainWindowItem = NSMenuItem(
+            title: "Show Main Window", 
+            action: #selector(showMainWindow), 
+            keyEquivalent: "m"
+        )
+        mainWindowItem.target = self
+        menu.addItem(mainWindowItem)
+        
         menu.addItem(NSMenuItem.separator())
         
+        // Quit option
         let quitItem = NSMenuItem(title: "Quit Kopi", action: #selector(quitApp), keyEquivalent: "q")
         quitItem.target = self
         menu.addItem(quitItem)
@@ -88,6 +102,83 @@ class MenuBarManager: NSObject, ObservableObject {
         } else {
             showPinboard()
         }
+    }
+    
+    @objc private func showMainWindow() {
+        // Hide pinboard if visible
+        if isPinboardVisible {
+            hidePinboard()
+        }
+        
+        // Check if main window already exists and is visible
+        if let window = mainWindow, window.isVisible {
+            // Just bring it to front
+            NSApp.setActivationPolicy(.regular)
+            window.level = .floating
+            window.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
+            // Reset to normal level after showing
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                window.level = .normal
+            }
+            return
+        }
+        
+        // Create main window if it doesn't exist
+        Task { @MainActor in
+            self.createAndShowMainWindow()
+        }
+    }
+    
+    @MainActor private func createAndShowMainWindow() {
+        // Close existing main window if any
+        if let existingWindow = mainWindow {
+            existingWindow.close()
+            mainWindow = nil
+        }
+        
+        // Create the main window with proper setup
+        let contentView = ContentView()
+            .environment(\.managedObjectContext, PersistenceController.shared.container.viewContext)
+            .environmentObject(ClipboardMonitor.shared)
+            .environmentObject(CloudKitManager.shared)
+            .environmentObject(self)
+        
+        // Create the window
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 1000, height: 700),
+            styleMask: [.titled, .closable, .miniaturizable, .resizable],
+            backing: .buffered,
+            defer: false
+        )
+        
+        // Configure window
+        window.title = "Kopi"
+        window.center()
+        window.isReleasedWhenClosed = false // Important: don't release when closed
+        window.delegate = self
+        
+        // Create hosting view and set it
+        let hostingView = NSHostingView(rootView: contentView)
+        window.contentView = hostingView
+        
+        // Store reference
+        mainWindow = window
+        
+        // Change activation policy to show window properly
+        NSApp.setActivationPolicy(.regular)
+        
+        // Set window level to floating temporarily to ensure it appears on top
+        window.level = .floating
+        window.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+        
+        // Reset to normal level after a brief delay
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            window.level = .normal
+        }
+        
+        isMainWindowVisible = true
     }
     
     @objc private func showPinboard() {
@@ -108,7 +199,7 @@ class MenuBarManager: NSObject, ObservableObject {
         // Position window below the menu bar button - full screen width
         let screen = NSScreen.main ?? NSScreen.screens.first!
         let screenRect = screen.visibleFrame
-        let windowSize = NSSize(width: screenRect.width, height: 200) // Further increased height
+        let windowSize = NSSize(width: screenRect.width, height: 200)
         let windowOrigin = NSPoint(
             x: screenRect.minX,
             y: screenFrame.minY - windowSize.height - 5
@@ -148,7 +239,8 @@ class MenuBarManager: NSObject, ObservableObject {
         // Create and set the content view
         let hostingView = NSHostingView(rootView: HorizontalPinboardView(onDismiss: {
             self.hidePinboard()
-        }))
+        })
+        .environmentObject(ClipboardMonitor.shared))
         
         window.contentView = hostingView
         
@@ -177,5 +269,26 @@ extension MenuBarManager: NSWindowDelegate {
         if notification.object as? NSWindow == pinboardWindow {
             hidePinboard()
         }
+    }
+    
+    func windowWillClose(_ notification: Notification) {
+        // Handle main window closing
+        if notification.object as? NSWindow == mainWindow {
+            isMainWindowVisible = false
+            mainWindow = nil
+            // Return to accessory mode when main window closes
+            DispatchQueue.main.async {
+                NSApp.setActivationPolicy(.accessory)
+            }
+        }
+    }
+    
+    func windowShouldClose(_ sender: NSWindow) -> Bool {
+        // Allow window to close but don't quit the app
+        if sender == mainWindow {
+            // Just hide the window, don't quit the app
+            return true
+        }
+        return true
     }
 } 

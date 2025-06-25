@@ -44,6 +44,10 @@ class ClipboardDataManager: ObservableObject {
             // Update the existing item's timestamp to move it to the top
             existingItem.lastModified = Date()
             saveContext()
+            
+            // Post notification to update all views
+            NotificationCenter.default.post(name: .cloudKitSyncCompleted, object: nil)
+            
             return existingItem
         }
         
@@ -69,6 +73,9 @@ class ClipboardDataManager: ObservableObject {
         print("➕ [macOS] Creating NEW clipboard item: \(itemId) - \(content.prefix(50))")
         
         saveContext()
+        
+        // Post notification to update all views immediately
+        NotificationCenter.default.post(name: .cloudKitSyncCompleted, object: nil)
         
         // MacBook acts as relay - push to CloudKit immediately
         Task {
@@ -251,9 +258,13 @@ class ClipboardDataManager: ObservableObject {
     
     func updateClipboardItem(_ item: ClipboardItem, content: String) {
         item.content = content
+        item.lastModified = Date()
         // contentPreview removed in new schema
         // fileSize removed in new schema
         saveContext()
+        
+        // Post notification to update all views
+        NotificationCenter.default.post(name: .cloudKitSyncCompleted, object: nil)
     }
     
     // MARK: - Enhanced Query Methods
