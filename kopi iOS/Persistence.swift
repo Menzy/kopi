@@ -53,16 +53,25 @@ struct PersistenceController {
         if inMemory {
             container.persistentStoreDescriptions.first!.url = URL(fileURLWithPath: "/dev/null")
         } else {
-            // Configure for local-only Core Data storage
+            // Configure for app group shared storage
             guard let description = container.persistentStoreDescriptions.first else {
                 fatalError("Failed to retrieve a persistent store description.")
+            }
+            
+            // Use app group container for shared access with keyboard extension
+            if let appGroupURL = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: "group.com.menzy.kopi") {
+                let storeURL = appGroupURL.appendingPathComponent("kopi.sqlite")
+                description.url = storeURL
+                print("✅ [iOS] Using app group store at: \(storeURL)")
+            } else {
+                print("❌ [iOS] Failed to access app group container")
             }
             
             // Enable persistent history tracking for manual CloudKit sync
             description.setOption(true as NSNumber, forKey: NSPersistentHistoryTrackingKey)
             description.setOption(true as NSNumber, forKey: NSPersistentStoreRemoteChangeNotificationPostOptionKey)
             
-            print("🔧 [iOS] Configured Core Data for local-only storage (manual CloudKit sync)")
+            print("🔧 [iOS] Configured Core Data for app group shared storage (manual CloudKit sync)")
         }
         
         // Load persistent stores with simple error handling

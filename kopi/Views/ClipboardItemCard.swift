@@ -55,7 +55,7 @@ struct ClipboardItemCard: View {
             
             // Content preview - optimized for square layout
             VStack(alignment: .leading, spacing: 6) {
-                if let content = item.content {
+                if let content = item.content, !content.isEmpty {
                     let contentType = ContentType(rawValue: item.contentType ?? "text") ?? .text
                     
                     switch contentType {
@@ -126,7 +126,7 @@ struct ClipboardItemCard: View {
             // Bottom info and settings
             HStack {
                 // Content info (character count, URL, or dimensions)
-                if let content = item.content {
+                if let content = item.content, !content.isEmpty {
                     let contentType = ContentType(rawValue: item.contentType ?? "text") ?? .text
                     
                     switch contentType {

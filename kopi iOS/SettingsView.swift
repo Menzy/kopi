@@ -14,6 +14,61 @@ struct SettingsView: View {
     var body: some View {
         NavigationView {
             List {
+                Section("Kopi Keyboard") {
+                    VStack(alignment: .leading, spacing: 12) {
+                        HStack {
+                            Image(systemName: "keyboard")
+                                .foregroundColor(.purple)
+                            Text("Keyboard Extension")
+                            Spacer()
+                            Button("Setup") {
+                                openKeyboardSettings()
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .controlSize(.small)
+                        }
+                        
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Access your clipboard from any app:")
+                                .font(.subheadline)
+                                .fontWeight(.medium)
+                            
+                            VStack(alignment: .leading, spacing: 4) {
+                                HStack {
+                                    Text("1.")
+                                        .fontWeight(.medium)
+                                        .foregroundColor(.blue)
+                                    Text("Go to Settings > General > Keyboard > Keyboards")
+                                }
+                                
+                                HStack {
+                                    Text("2.")
+                                        .fontWeight(.medium)
+                                        .foregroundColor(.blue)
+                                    Text("Add 'Kopi Keyboard'")
+                                }
+                                
+                                HStack {
+                                    Text("3.")
+                                        .fontWeight(.medium)
+                                        .foregroundColor(.blue)
+                                    Text("Enable 'Allow Full Access'")
+                                }
+                                
+                                HStack {
+                                    Text("4.")
+                                        .fontWeight(.medium)
+                                        .foregroundColor(.blue)
+                                    Text("Use the 🌐 button to switch keyboards")
+                                }
+                            }
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        }
+                    }
+                    .padding(.vertical, 4)
+                }
+                
                 Section("Data Sync") {
                     HStack {
                         Image(systemName: "icloud")
@@ -28,6 +83,26 @@ struct SettingsView: View {
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }
+                
+                Section("About") {
+                    HStack {
+                        Image(systemName: "info.circle")
+                            .foregroundColor(.gray)
+                        Text("Version")
+                        Spacer()
+                        Text("1.0")
+                            .foregroundColor(.secondary)
+                    }
+                    
+                    HStack {
+                        Image(systemName: "shield.checkerboard")
+                            .foregroundColor(.green)
+                        Text("Privacy")
+                        Spacer()
+                        Text("Local & iCloud Only")
+                            .foregroundColor(.secondary)
+                    }
+                }
             }
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.large)
@@ -38,6 +113,16 @@ struct SettingsView: View {
                     }
                 }
             }
+        }
+    }
+    
+    private func openKeyboardSettings() {
+        guard let settingsUrl = URL(string: UIApplication.openSettingsURLString) else {
+            return
+        }
+        
+        if UIApplication.shared.canOpenURL(settingsUrl) {
+            UIApplication.shared.open(settingsUrl)
         }
     }
 }
