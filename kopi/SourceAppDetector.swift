@@ -23,6 +23,13 @@ class SourceAppDetector {
     func detectCurrentApp() -> SourceAppInfo {
         // Try to get the frontmost application using NSWorkspace (most reliable)
         if let frontmostApp = NSWorkspace.shared.frontmostApplication {
+            // Skip our own app - we want the app that was active before us
+            if frontmostApp.bundleIdentifier == "com.wanmenzy.kopi" || 
+               frontmostApp.bundleIdentifier == Bundle.main.bundleIdentifier {
+                // Get the previously active app
+                return getPreviouslyActiveApp()
+            }
+            
             return SourceAppInfo(
                 bundleID: frontmostApp.bundleIdentifier,
                 name: frontmostApp.localizedName,
@@ -80,6 +87,31 @@ class SourceAppDetector {
         }
         
         return pngData
+    }
+    
+    private func getPreviouslyActiveApp() -> SourceAppInfo {
+        // Get all running applications, excluding our own
+        let runningApps = NSWorkspace.shared.runningApplications
+        let ourBundleID = Bundle.main.bundleIdentifier
+        
+        // Find the most recently active app that's not us
+        let otherApps = runningApps.filter { app in
+            app.bundleIdentifier != ourBundleID &&
+            app.bundleIdentifier != "com.wanmenzy.kopi" &&
+            app.activationPolicy == .regular &&
+            !app.isTerminated
+        }
+        
+        // Sort by activation order (most recent first) and get the first one
+        if let previousApp = otherApps.first {
+            return SourceAppInfo(
+                bundleID: previousApp.bundleIdentifier,
+                name: previousApp.localizedName,
+                iconData: getAppIconData(for: previousApp)
+            )
+        }
+        
+        return SourceAppInfo(bundleID: nil, name: "Unknown", iconData: nil)
     }
 }
 

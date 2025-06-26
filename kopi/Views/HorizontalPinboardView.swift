@@ -10,7 +10,7 @@ import SwiftUI
 struct HorizontalPinboardView: View {
     let onDismiss: () -> Void
     
-    @StateObject private var dataManager = ClipboardDataManager.shared
+    @EnvironmentObject private var dataManager: ClipboardDataManager
     @EnvironmentObject private var clipboardMonitor: ClipboardMonitor
     @State private var clipboardItems: [ClipboardItem] = []
     @State private var hoveredItem: NSManagedObjectID?
@@ -35,7 +35,7 @@ struct HorizontalPinboardView: View {
                             },
                             onDelete: {
                                 dataManager.deleteClipboardItem(item)
-                                refreshData()
+                                // No need to call refreshData() - the onChange will handle it
                             },
                             onSelect: {
                                 hoveredItem = item.objectID
@@ -67,18 +67,23 @@ struct HorizontalPinboardView: View {
         )
         .padding(.horizontal, 20)  // Horizontal padding around component
         .padding(.vertical, 12)     // Reduced vertical padding around component
+        .onKeyDown { event in
+            // Handle escape key as backup
+            if event.keyCode == 53 { // Escape key code
+                onDismiss()
+                return true
+            }
+            return false
+        }
         .onAppear {
             refreshData()
         }
-        .onReceive(NotificationCenter.default.publisher(for: .clipboardDidChange)) { _ in
-            refreshData()
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .cloudKitSyncCompleted)) { _ in
-            // Refresh when CloudKit sync completes (including deletions/modifications)
-            refreshData()
-        }
         .onChange(of: clipboardMonitor.clipboardDidChange) {
-            // Also listen to the same property that ContentView uses
+            // Single source of truth for data updates
+            refreshData()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .localDataDidChange)) { _ in
+            // Immediate refresh when local data changes (like deletions)
             refreshData()
         }
     }

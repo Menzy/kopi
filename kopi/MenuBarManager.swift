@@ -14,6 +14,7 @@ class MenuBarManager: NSObject, ObservableObject {
     private var statusItem: NSStatusItem?
     private var pinboardWindow: NSWindow?
     private var mainWindow: NSWindow?
+    private var eventMonitor: Any?
     
     @Published var isPinboardVisible = false
     @Published var isMainWindowVisible = false
@@ -50,6 +51,7 @@ class MenuBarManager: NSObject, ObservableObject {
         }
     }
     
+    @MainActor
     @objc private func handleButtonClick() {
         guard let event = NSApp.currentEvent else { return }
         
@@ -62,6 +64,7 @@ class MenuBarManager: NSObject, ObservableObject {
         }
     }
     
+    @MainActor
     private func showContextMenu() {
         guard let statusItem = statusItem, let button = statusItem.button else { return }
         
@@ -96,6 +99,7 @@ class MenuBarManager: NSObject, ObservableObject {
         menu.popUp(positioning: nil, at: NSPoint(x: 0, y: button.bounds.height), in: button)
     }
     
+    @MainActor
     @objc private func togglePinboard() {
         if isPinboardVisible {
             hidePinboard()
@@ -104,6 +108,7 @@ class MenuBarManager: NSObject, ObservableObject {
         }
     }
     
+    @MainActor
     @objc private func showMainWindow() {
         // Hide pinboard if visible
         if isPinboardVisible {
@@ -181,6 +186,7 @@ class MenuBarManager: NSObject, ObservableObject {
         isMainWindowVisible = true
     }
     
+    @MainActor
     @objc private func showPinboard() {
         guard let statusItem = statusItem, let button = statusItem.button else { return }
         
@@ -208,14 +214,66 @@ class MenuBarManager: NSObject, ObservableObject {
         window.setFrame(NSRect(origin: windowOrigin, size: windowSize), display: true)
         window.makeKeyAndOrderFront(nil)
         
+        // Start monitoring for clicks outside and escape key
+        startEventMonitoring()
+        
         isPinboardVisible = true
     }
     
+    @MainActor
     @objc private func hidePinboard() {
         pinboardWindow?.orderOut(nil)
+        stopEventMonitoring()
         isPinboardVisible = false
     }
     
+    private func startEventMonitoring() {
+        // Stop any existing monitoring
+        stopEventMonitoring()
+        
+        // Monitor for clicks and key presses
+        eventMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .keyDown]) { [weak self] event in
+            guard let self = self else { return }
+            
+            Task { @MainActor in
+                // Only process events if pinboard is visible
+                guard self.isPinboardVisible else { return }
+                
+                if event.type == .keyDown {
+                    // Check for escape key
+                    if event.keyCode == 53 { // Escape key code
+                        self.hidePinboard()
+                    }
+                } else if event.type == .leftMouseDown || event.type == .rightMouseDown {
+                    // Check if click is outside the pinboard window
+                    guard let window = self.pinboardWindow else { return }
+                    
+                    // Convert click location to screen coordinates
+                    let screenLocation = NSPoint(x: event.locationInWindow.x, y: event.locationInWindow.y)
+                    if let eventWindow = event.window {
+                        let screenPoint = eventWindow.convertToScreen(NSRect(origin: screenLocation, size: .zero)).origin
+                        
+                        // Check if click is outside the pinboard window frame
+                        if !window.frame.contains(screenPoint) {
+                            self.hidePinboard()
+                        }
+                    } else {
+                        // If no event window, assume click is outside
+                        self.hidePinboard()
+                    }
+                }
+            }
+        }
+    }
+    
+    private func stopEventMonitoring() {
+        if let monitor = eventMonitor {
+            NSEvent.removeMonitor(monitor)
+            eventMonitor = nil
+        }
+    }
+    
+    @MainActor
     private func createPinboardWindow() {
         // Get screen dimensions for full-width window
         let screen = NSScreen.main ?? NSScreen.screens.first!
@@ -236,11 +294,15 @@ class MenuBarManager: NSObject, ObservableObject {
         window.ignoresMouseEvents = false
         window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         
+        // Create pinboard content view with proper environment objects
+        let pinboardContent = HorizontalPinboardView(onDismiss: hidePinboard)
+            .environment(\.managedObjectContext, PersistenceController.shared.container.viewContext)
+            .environmentObject(ClipboardMonitor.shared)
+            .environmentObject(ClipboardDataManager.shared)
+            .environmentObject(self)
+        
         // Create and set the content view
-        let hostingView = NSHostingView(rootView: HorizontalPinboardView(onDismiss: {
-            self.hidePinboard()
-        })
-        .environmentObject(ClipboardMonitor.shared))
+        let hostingView = NSHostingView(rootView: pinboardContent)
         
         window.contentView = hostingView
         
@@ -250,11 +312,13 @@ class MenuBarManager: NSObject, ObservableObject {
         pinboardWindow = window
     }
     
+    @MainActor
     @objc private func quitApp() {
         NSApplication.shared.terminate(nil)
     }
     
     deinit {
+        stopEventMonitoring()
         if let statusItem = statusItem {
             NSStatusBar.system.removeStatusItem(statusItem)
         }
@@ -267,7 +331,18 @@ extension MenuBarManager: NSWindowDelegate {
     func windowDidResignKey(_ notification: Notification) {
         // Hide pinboard when it loses focus
         if notification.object as? NSWindow == pinboardWindow {
-            hidePinboard()
+            Task { @MainActor in
+                hidePinboard()
+            }
+        }
+    }
+    
+    func windowDidResignMain(_ notification: Notification) {
+        // Additional check for when pinboard loses main window status
+        if notification.object as? NSWindow == pinboardWindow {
+            Task { @MainActor in
+                hidePinboard()
+            }
         }
     }
     
@@ -280,6 +355,11 @@ extension MenuBarManager: NSWindowDelegate {
             DispatchQueue.main.async {
                 NSApp.setActivationPolicy(.accessory)
             }
+        } else if notification.object as? NSWindow == pinboardWindow {
+            // Handle pinboard window closing
+            Task { @MainActor in
+                hidePinboard()
+            }
         }
     }
     
@@ -288,6 +368,12 @@ extension MenuBarManager: NSWindowDelegate {
         if sender == mainWindow {
             // Just hide the window, don't quit the app
             return true
+        } else if sender == pinboardWindow {
+            // Hide pinboard instead of closing
+            Task { @MainActor in
+                hidePinboard()
+            }
+            return false
         }
         return true
     }

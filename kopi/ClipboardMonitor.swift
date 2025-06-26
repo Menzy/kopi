@@ -22,7 +22,6 @@ class ClipboardMonitor: ObservableObject {
     
     private let pasteboard = NSPasteboard.general
     private var lastChangeCount: Int = 0
-    private var lastContentHash: Int = 0
     private var monitoringTimer: Timer?
     private var cancellables = Set<AnyCancellable>()
     
@@ -30,10 +29,10 @@ class ClipboardMonitor: ObservableObject {
     private var lastAppCopyContent: String?
     private var lastAppCopyTime: Date?
     
-    // Phase 3: Universal Handoff Detection
-    private var lastHandoffDetectionTime: Date?
-    private let handoffDetectionWindow: TimeInterval = 2.0 // 2 seconds to detect handoff
+    // Track the frontmost app before clipboard changes
+    private var lastFrontmostApp: SourceAppInfo?
     
+    // Published properties for UI updates
     @Published var isMonitoring: Bool = false
     @Published var lastClipboardContent: String = ""
     @Published var clipboardDidChange: Bool = false
@@ -42,49 +41,9 @@ class ClipboardMonitor: ObservableObject {
     private let sourceAppDetector = SourceAppDetector.shared
     private let privacyFilter = PrivacyFilter.shared
     
-    private init() {
+    init() {
         lastChangeCount = pasteboard.changeCount
-        setupHandoffNotifications()
-        
-        // Initialize dataManager with proper main actor access
-        Task { @MainActor in
-            self.dataManager = ClipboardDataManager.shared
-        }
-    }
-    
-    // MARK: - Phase 3: Universal Handoff Setup
-    
-    private func setupHandoffNotifications() {
-        // Listen for handoff-related system notifications
-        NotificationCenter.default.addObserver(
-            forName: NSNotification.Name("NSApplicationWillContinueUserActivityNotification"),
-            object: nil,
-            queue: .main
-        ) { [weak self] _ in
-            self?.prepareForHandoffDetection()
-        }
-        
-        // Monitor for handoff activity types
-        NotificationCenter.default.addObserver(
-            forName: NSNotification.Name("NSApplicationDidContinueUserActivityNotification"), 
-            object: nil,
-            queue: .main
-        ) { [weak self] notification in
-            self?.handlePotentialHandoffActivity(notification)
-        }
-    }
-    
-    private func prepareForHandoffDetection() {
-        lastHandoffDetectionTime = Date()
-        print("🔄 [MacBook Relay] Preparing for potential handoff detection")
-    }
-    
-    private func handlePotentialHandoffActivity(_ notification: Notification) {
-        print("🔄 [MacBook Relay] Potential handoff activity detected")
-        // Immediate clipboard check after handoff activity
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
-            self?.forceCheck()
-        }
+        print("📋 Clipboard monitoring initialized")
     }
     
     // MARK: - Public Methods
@@ -94,27 +53,16 @@ class ClipboardMonitor: ObservableObject {
         
         isMonitoring = true
         lastChangeCount = pasteboard.changeCount
-        lastContentHash = getClipboardContentHash()
         
-        // Start high-frequency timer-based monitoring (polling every 0.05 seconds for ultra-fast response)
-        monitoringTimer = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { [weak self] _ in
+        // Capture initial frontmost app
+        lastFrontmostApp = sourceAppDetector.detectCurrentApp()
+        
+        // Start moderate-frequency timer-based monitoring (polling every 0.2 seconds for good responsiveness without overwhelming)
+        monitoringTimer = Timer.scheduledTimer(withTimeInterval: 0.2, repeats: true) { [weak self] _ in
             self?.checkClipboardChanges()
         }
         
-        // Set timer to high priority for better responsiveness
-        if let timer = monitoringTimer {
-            RunLoop.current.add(timer, forMode: .common)
-        }
-        
-        // Also listen for app activation events to check immediately when switching apps
-        NotificationCenter.default.addObserver(
-            forName: NSApplication.didBecomeActiveNotification,
-            object: nil,
-            queue: .main
-        ) { [weak self] _ in
-            // Immediate check when app becomes active
-            self?.checkClipboardChanges()
-        }
+        print("📋 Clipboard monitoring started successfully!")
     }
     
     func stopMonitoring() {
@@ -127,10 +75,6 @@ class ClipboardMonitor: ObservableObject {
         
         // Remove notification observers
         NotificationCenter.default.removeObserver(self, name: NSApplication.didBecomeActiveNotification, object: nil)
-        
-        // Phase 3: Remove handoff notification observers
-        NotificationCenter.default.removeObserver(self, name: NSNotification.Name("NSApplicationWillContinueUserActivityNotification"), object: nil)
-        NotificationCenter.default.removeObserver(self, name: NSNotification.Name("NSApplicationDidContinueUserActivityNotification"), object: nil)
     }
     
     func forceCheck() {
@@ -146,321 +90,83 @@ class ClipboardMonitor: ObservableObject {
         // Quick exit if change count hasn't changed
         guard currentChangeCount != lastChangeCount else { return }
         
-        // Get content hash for additional validation
-        let currentContentHash = getClipboardContentHash()
+        // Update the change count immediately to prevent race conditions
+        lastChangeCount = currentChangeCount
         
-        // Double-check to avoid processing the same content multiple times
-        guard currentContentHash != lastContentHash else {
-            lastChangeCount = currentChangeCount
+        // IMMEDIATELY capture clipboard content and source app while still on timer thread
+        // This prevents delays that could cause wrong source app detection
+        guard let clipboardContent = getClipboardContent() else { return }
+        
+        // Check if we should ignore this clipboard change
+        if shouldIgnoreClipboardChange(content: clipboardContent.content) {
             return
         }
         
-        lastChangeCount = currentChangeCount
-        lastContentHash = currentContentHash
-        handleClipboardChange()
-    }
-    
-    private func getClipboardContentHash() -> Int {
-        // Quick hash of clipboard content to detect actual changes
-        var hasher = Hasher()
+        // Capture the frontmost app IMMEDIATELY before any async operations
+        let sourceApp = lastFrontmostApp ?? sourceAppDetector.detectCurrentApp()
+        lastFrontmostApp = sourceAppDetector.detectCurrentApp() // Update for next time
         
-        // Hash the most common types quickly
-        if let string = pasteboard.string(forType: .string) {
-            hasher.combine(string)
-        }
-        if let url = pasteboard.string(forType: .URL) {
-            hasher.combine(url)
-        }
-        if let data = pasteboard.data(forType: .png) {
-            hasher.combine(data.count) // Use data size for images to avoid processing large data
-        }
-        
-        return hasher.finalize()
-    }
-    
-    private func handleClipboardChange() {
-        // Process clipboard changes on a background queue to avoid blocking the timer
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+        // IMMEDIATELY save to local storage on main thread - no delays
+        DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
             
-            // Get clipboard content
-            guard let clipboardContent = self.checkClipboardContent() else {
-                return
-            }
-            
-            // Skip if this change was made by our app
-            if self.shouldIgnoreClipboardChange(content: clipboardContent.content) {
-                print("Ignoring clipboard change made by this app: \(clipboardContent.content.prefix(30))")
-                return
-            }
-            
-            // Phase 3: Detect if this is Universal Handoff data
-            let isHandoffData = self.isUniversalHandoffData()
-            let sourceAppInfo: SourceAppInfo
-            
-            if isHandoffData {
-                print("🔄 [MacBook Relay] Universal Handoff detected - iPhone → MacBook relay")
-                // For handoff data, we know it came from iPhone
-                sourceAppInfo = SourceAppInfo(
-                    bundleID: "com.apple.universalhandoff.iphone", 
-                    name: "iPhone (Handoff)",
-                    iconData: nil
-                )
-            } else {
-                // Detect source application for local clipboard changes
-                sourceAppInfo = self.sourceAppDetector.detectCurrentApp()
-                print("📱 [Local Clipboard] Source app detected: \(sourceAppInfo.name ?? "Unknown") (\(sourceAppInfo.bundleID ?? "no bundle ID"))")
-            }
-            
-            // Check for privacy restrictions
-            let privacyCheck = self.privacyFilter.shouldExcludeContent(
-                clipboardContent.content,
+            // Save immediately to local Core Data storage
+            let dataManager = ClipboardDataManager.shared
+
+            let _ = dataManager.createClipboardItem(
+                content: clipboardContent.content,
                 contentType: clipboardContent.type,
-                sourceApp: sourceAppInfo.bundleID
+                sourceApp: sourceApp.bundleID,
+                sourceAppName: sourceApp.name,
+                sourceAppIcon: sourceApp.iconData
             )
             
-            if privacyCheck.shouldExclude {
-                return
-            }
+            // Update UI immediately
+            self.lastClipboardContent = clipboardContent.content
+            self.clipboardDidChange.toggle() // Trigger UI refresh
             
-            // Phase 3: Save with relay metadata - dispatch to main actor
-            Task { @MainActor in
-                self.saveClipboardItem(
-                    content: clipboardContent.content,
-                    type: clipboardContent.type,
-                    sourceApp: sourceAppInfo.bundleID,
-                    sourceAppName: sourceAppInfo.name,
-                    sourceAppIcon: sourceAppInfo.iconData,
-                    isHandoffRelay: isHandoffData
-                )
-            }
-            
-            // Update published properties on main queue
-            DispatchQueue.main.async {
-                self.lastClipboardContent = clipboardContent.content
-                self.clipboardDidChange.toggle() // Trigger UI refresh
-                
-                // Post notification for horizontal pinboard
-                NotificationCenter.default.post(name: .clipboardDidChange, object: nil)
-            }
+            // CloudKit sync happens automatically in ClipboardDataManager.createClipboardItem
+            // so both local storage and cloud sync are handled properly
+
+            print("📋 Clipboard item saved immediately: \(clipboardContent.content.prefix(30))... from \(sourceApp.name ?? "Unknown")")
         }
     }
     
-    private func checkClipboardContent() -> ClipboardContent? {
+    // Simplified and more reliable clipboard content detection
+    private func getClipboardContent() -> ClipboardContent? {
         let pasteboard = NSPasteboard.general
         
-        // 1. First priority: Get original image data in native format
-        let imageTypes = [
-            NSPasteboard.PasteboardType.png,
-            NSPasteboard.PasteboardType("public.jpeg"),
-            NSPasteboard.PasteboardType("public.jpg"), 
-            NSPasteboard.PasteboardType("public.heic"),
-            NSPasteboard.PasteboardType("public.heif"),
-            NSPasteboard.PasteboardType("public.gif"),
-            NSPasteboard.PasteboardType("public.bmp"),
-            NSPasteboard.PasteboardType("public.webp"),
-            NSPasteboard.PasteboardType("public.svg-image")
-        ]
-        
-        // Try to get original image data first
-        for imageType in imageTypes {
-            if let imageData = pasteboard.data(forType: imageType) {
-                // Verify it's valid image data
-                if let _ = NSImage(data: imageData) {
-                    let base64String = imageData.base64EncodedString()
-                    return ClipboardContent(content: base64String, type: .image)
-                }
-            }
-        }
-        
-        // 2. Check for file URLs that might be images
-        if let fileURL = pasteboard.string(forType: .fileURL) {
-            if let url = URL(string: fileURL) {
-                // Check if it's an image file and try to read it directly
-                if isImageFile(fileURL) || hasImageUTI(url) {
-                    do {
-                        // Read the actual image file from disk
-                        let imageData = try Data(contentsOf: url)
-                        
-                        // Verify it's actually image data by trying to create NSImage
-                        if let _ = NSImage(data: imageData) {
-                            let base64String = imageData.base64EncodedString()
-                            return ClipboardContent(content: base64String, type: .image)
-                        }
-                    } catch {
-                        // Failed to read image file, continue to other content types
-                    }
-                }
-            }
-        }
-        
-        // 3. Check for TIFF data (fallback for other image sources)
-        if let tiffData = pasteboard.data(forType: .tiff) {
-            // Only accept larger TIFF files to avoid file icons
-            if tiffData.count > 100000, let _ = NSImage(data: tiffData) {
-                let base64String = tiffData.base64EncodedString()
+        // 1. Check for images first (most specific)
+        if let imageData = pasteboard.data(forType: .png) ?? 
+                           pasteboard.data(forType: .tiff) {
+            // Basic validation - just check if we can create an image
+            if let _ = NSImage(data: imageData), imageData.count > 1000 { // Minimum size to avoid tiny icons
+                let base64String = imageData.base64EncodedString()
                 return ClipboardContent(content: base64String, type: .image)
             }
         }
         
-        // 4. Check for URLs
-        if let urlString = pasteboard.string(forType: .URL) ?? pasteboard.string(forType: .string) {
-            if isValidURL(urlString) {
-                return ClipboardContent(content: urlString, type: .url)
-            }
+        // 2. Check for URLs (before text since URLs are also strings)
+        if let urlString = pasteboard.string(forType: .URL) {
+            return ClipboardContent(content: urlString, type: .url)
         }
         
-        // 5. Check for text
+        // 3. Check for text content
         if let text = pasteboard.string(forType: .string) {
-            if isValidURL(text) {
+            // Simple URL detection
+            if text.hasPrefix("http://") || text.hasPrefix("https://") || text.hasPrefix("ftp://") {
                 return ClipboardContent(content: text, type: .url)
             } else {
                 return ClipboardContent(content: text, type: .text)
             }
         }
         
+        // 4. Check for file URLs
+        if let fileURL = pasteboard.string(forType: .fileURL) {
+            return ClipboardContent(content: fileURL, type: .url)
+        }
+        
         return nil
-    }
-    
-    // MARK: - Phase 3: Universal Handoff Detection
-    
-    private func isUniversalHandoffData() -> Bool {
-        // First check: Did we recently detect handoff activity?
-        if let handoffTime = lastHandoffDetectionTime,
-           Date().timeIntervalSince(handoffTime) <= handoffDetectionWindow {
-            print("🔄 [HandoffDetection] Within handoff time window, checking heuristics...")
-            return detectHandoffHeuristics()
-        }
-        
-        // Second check: Run heuristics anyway but be more strict
-        let isHandoff = detectHandoffHeuristics()
-        if isHandoff {
-            print("🔄 [HandoffDetection] Handoff detected via heuristics")
-        } else {
-            print("🔄 [HandoffDetection] Regular clipboard change - not handoff")
-        }
-        
-        return isHandoff
-    }
-    
-    private func detectHandoffHeuristics() -> Bool {
-        let pasteboard = NSPasteboard.general
-        
-        // Get all pasteboard types for analysis
-        let pasteboardTypes = pasteboard.types ?? []
-        print("🔍 [HandoffDetection] Pasteboard types: \(pasteboardTypes.map { $0.rawValue })")
-        
-        // More specific handoff detection - these are the actual handoff types
-        let handoffIndicators = [
-            "com.apple.handoff.clipboard.data",
-            "com.apple.ios.pasteboard.handoff",
-            "com.apple.continuity.clipboard"
-        ]
-        
-        // Check for actual handoff-specific types (not general types)
-        for type in pasteboardTypes {
-            if handoffIndicators.contains(type.rawValue) {
-                print("🔄 [HandoffDetection] Found handoff indicator: \(type.rawValue)")
-                return true
-            }
-        }
-        
-        // Check for iOS-specific pasteboard properties that indicate handoff
-        // Only if we have multiple specific iOS indicators together
-        let iosIndicators = [
-            "com.apple.uikit.pasteboard",
-            "public.utf8-plain-text"
-        ]
-        
-        let foundIosIndicators = pasteboardTypes.filter { type in
-            iosIndicators.contains(type.rawValue)
-        }
-        
-        // Only consider it handoff if we have multiple iOS-specific indicators
-        // AND it happened within handoff window
-        if foundIosIndicators.count >= 2,
-           let handoffTime = lastHandoffDetectionTime,
-           Date().timeIntervalSince(handoffTime) <= handoffDetectionWindow {
-            print("🔄 [HandoffDetection] Multiple iOS indicators within handoff window")
-            return true
-        }
-        
-        // Additional check: Look for handoff source metadata
-        if let sourceString = pasteboard.string(forType: NSPasteboard.PasteboardType("com.apple.handoff.source")) {
-            print("🔄 [HandoffDetection] Found handoff source metadata: \(sourceString)")
-            return true
-        }
-        
-        print("🔄 [HandoffDetection] No handoff indicators found - this is a regular clipboard change")
-        return false
-    }
-    
-    // MARK: - Helper Methods
-    
-    private func isValidURL(_ string: String) -> Bool {
-        guard let url = URL(string: string) else { return false }
-        return url.scheme != nil && (url.scheme == "http" || url.scheme == "https")
-    }
-    
-    private func isImageFile(_ path: String) -> Bool {
-        let imageExtensions = ["png", "jpg", "jpeg", "gif", "bmp", "tiff", "heic", "heif", "webp", "svg"]
-        let pathExtension = URL(fileURLWithPath: path).pathExtension.lowercased()
-        return imageExtensions.contains(pathExtension)
-    }
-    
-    private func hasImageUTI(_ url: URL) -> Bool {
-        guard let uti = try? url.resourceValues(forKeys: [.typeIdentifierKey]).typeIdentifier else {
-            return false
-        }
-        return UTType(uti)?.conforms(to: .image) == true
-    }
-    
-    @MainActor
-    private func saveClipboardItem(content: String, type: ContentType, sourceApp: String?, sourceAppName: String?, sourceAppIcon: Data?, isHandoffRelay: Bool = false) {
-        // Phase 3: Create clipboard item with relay metadata
-        let clipboardItem = dataManager.createClipboardItem(
-            content: content,
-            contentType: type,
-            sourceApp: sourceApp,
-            sourceAppName: sourceAppName,
-            sourceAppIcon: sourceAppIcon
-        )
-        
-        // Phase 3: Set relay metadata if this is handoff data
-        if isHandoffRelay {
-            let deviceIdentifier = ContentHashingUtility.getDeviceIdentifier()
-            clipboardItem.relayedBy = deviceIdentifier
-            clipboardItem.createdOnDevice = "iPhone" // We know handoff comes from iPhone
-            print("🔄 [MacBook Relay] Item marked as relayed from iPhone: \(clipboardItem.id?.uuidString ?? "unknown")")
-        }
-        
-        // Phase 5: Enhanced MacBook relay with offline fallback
-        print("📤 [MacBook Relay] Processing clipboard item...")
-        dataManager.saveContext() // Save first to ensure Core Data integrity
-        
-        // Phase 5: Try iCloud push first, with offline queue fallback
-        Task {
-            await handleClipboardSync(clipboardItem, content: content, isHandoffRelay: isHandoffRelay)
-        }
-    }
-    
-    // MARK: - Phase 5: Enhanced Sync with Offline Fallback
-    
-    private func handleClipboardSync(_ clipboardItem: ClipboardItem, content: String, isHandoffRelay: Bool) async {
-        // The ClipboardDataManager already pushes items to CloudKit in createClipboardItem()
-        // So we don't need to duplicate the push here. This method can be used for 
-        // additional processing or fallback handling in the future.
-        
-        print("✅ [MacBook Relay] Item processed: \(content.prefix(30))")
-        
-        if isHandoffRelay {
-            print("🔄 [MacBook Relay] Handoff item processed")
-        } else {
-            // For local items, we could implement enhanced Universal Handoff broadcasting
-            // when offline, but since CloudKitManager handles offline queueing, 
-            // we'll skip this for now to avoid complexity
-            print("📱 [Local Item] Regular clipboard item processed")
-        }
     }
     
     // MARK: - App Copy Tracking
@@ -470,7 +176,6 @@ class ClipboardMonitor: ObservableObject {
     func notifyAppCopiedToClipboard(content: String) {
         lastAppCopyContent = content
         lastAppCopyTime = Date()
-        print("App copied to clipboard: \(content.prefix(30))")
     }
     
     // Check if a clipboard change should be ignored (was made by this app)

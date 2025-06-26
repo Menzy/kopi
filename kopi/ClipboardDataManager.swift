@@ -39,16 +39,23 @@ class ClipboardDataManager: ObservableObject {
         
         // Check if we already have an item with this exact content hash
         if let existingItem = findItemByContentHash(contentHash) {
-            print("🔍 [macOS Dedup] Found existing item with same content hash: \(existingItem.id?.uuidString ?? "unknown") - content: \(content.prefix(30))")
-            print("🔍 [macOS Dedup] SKIPPING creation of duplicate item - updating timestamp instead")
-            // Update the existing item's timestamp to move it to the top
-            existingItem.lastModified = Date()
-            saveContext()
-            
-            // Post notification to update all views
-            NotificationCenter.default.post(name: .cloudKitSyncCompleted, object: nil)
-            
-            return existingItem
+            // CRITICAL: Validate that the existing item actually has valid content
+            if let existingContent = existingItem.content, !existingContent.isEmpty {
+                print("🔍 [macOS Dedup] Found existing item with same content hash: \(existingItem.id?.uuidString ?? "unknown") - content: \(existingContent.prefix(30))")
+                print("🔍 [macOS Dedup] SKIPPING creation of duplicate item - updating timestamp instead")
+                // Update the existing item's timestamp to move it to the top
+                existingItem.lastModified = Date()
+                saveContext()
+                
+                // No need to post notification here - the UI will update via clipboardDidChange
+                return existingItem
+            } else {
+                // Existing item has empty/nil content - delete it and create a new one
+                print("⚠️ [macOS Dedup] Found existing item with EMPTY content - deleting corrupted item and creating new one")
+                viewContext.delete(existingItem)
+                saveContext()
+                // Continue to create new item below
+            }
         }
         
         let item = ClipboardItem(context: viewContext)
@@ -74,8 +81,8 @@ class ClipboardDataManager: ObservableObject {
         
         saveContext()
         
-        // Post notification to update all views immediately
-        NotificationCenter.default.post(name: .cloudKitSyncCompleted, object: nil)
+        // Don't post notification here - let the clipboard monitor handle UI updates
+        // This prevents duplicate notifications and appearing/disappearing behavior
         
         // MacBook acts as relay - push to CloudKit immediately
         Task {
@@ -130,6 +137,9 @@ class ClipboardDataManager: ObservableObject {
         
         // Save the changes to persist the markedAsDeleted flag
         saveContext()
+        
+        // Post immediate UI update notification so views refresh right away
+        NotificationCenter.default.post(name: .localDataDidChange, object: nil)
         
         // Delete from CloudKit first, then delete locally
         Task {
@@ -201,6 +211,9 @@ class ClipboardDataManager: ObservableObject {
         
         // Save the changes to persist the markedAsDeleted flags
         saveContext()
+        
+        // Post immediate UI update notification so views refresh right away
+        NotificationCenter.default.post(name: .localDataDidChange, object: nil)
         
         // Then delete from CloudKit and delete locally
         Task {
@@ -495,4 +508,9 @@ class ClipboardDataManager: ObservableObject {
             return nil
         }
     }
+}
+
+// MARK: - Notifications
+extension Notification.Name {
+    static let localDataDidChange = Notification.Name("localDataDidChange")
 } 

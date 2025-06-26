@@ -102,21 +102,11 @@ struct ContentView: View {
             refreshData()
         }
         .onChange(of: clipboardMonitor.clipboardDidChange) {
-            // Auto-refresh when clipboard changes
-            refreshData()
-        }
-        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
-            // Force immediate clipboard check and refresh when app becomes active
-            clipboardMonitor.forceCheck()
-            refreshData()
-        }
-        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { _ in
-            // Force immediate clipboard check and refresh when window gains focus
-            clipboardMonitor.forceCheck()
+            // Single source of truth for clipboard changes
             refreshData()
         }
         .onReceive(NotificationCenter.default.publisher(for: .cloudKitSyncCompleted)) { _ in
-            // Refresh UI when CloudKit sync completes (including deletions from other devices)
+            // Only refresh for CloudKit sync events (deletions/modifications from other devices)
             print("🔄 [macOS UI] CloudKit sync completed - refreshing UI")
             refreshData()
         }
