@@ -188,6 +188,19 @@ class KeyboardViewController: UIInputViewController {
         scrollView.addSubview(clipboardStackView)
         stackView.addArrangedSubview(scrollView)
         
+        // Setup constraints for scroll view and clipboard stack
+        NSLayoutConstraint.activate([
+            scrollView.leadingAnchor.constraint(equalTo: stackView.leadingAnchor),
+            scrollView.trailingAnchor.constraint(equalTo: stackView.trailingAnchor),
+            scrollView.heightAnchor.constraint(equalToConstant: 160),
+            
+            clipboardStackView.leadingAnchor.constraint(equalTo: scrollView.leadingAnchor, constant: 12),
+            clipboardStackView.trailingAnchor.constraint(equalTo: scrollView.trailingAnchor, constant: -12),
+            clipboardStackView.topAnchor.constraint(equalTo: scrollView.topAnchor),
+            clipboardStackView.bottomAnchor.constraint(equalTo: scrollView.bottomAnchor),
+            clipboardStackView.heightAnchor.constraint(equalTo: scrollView.heightAnchor)
+        ])
+        
         // No items label
         noItemsLabel = UILabel()
         noItemsLabel.text = "No clipboard items found\nMake sure Kopi has access to your data"
@@ -403,123 +416,91 @@ class KeyboardViewController: UIInputViewController {
                 
                 // Add clipboard item views
                 for item in self.clipboardItems {
-                    let itemView = self.createClipboardItemView(item)
+                    let itemView = self.createItemView(for: item)
                     self.clipboardStackView.addArrangedSubview(itemView)
                 }
             }
         }
     }
     
-    private func createClipboardItemView(_ item: SimpleClipboardItem) -> UIView {
-        let cardView = UIView()
-        cardView.backgroundColor = UIColor.secondarySystemBackground
-        cardView.layer.cornerRadius = 16
-        cardView.layer.shadowColor = UIColor.black.cgColor
-        cardView.layer.shadowOffset = CGSize(width: 0, height: 2)
-        cardView.layer.shadowOpacity = 0.05
-        cardView.layer.shadowRadius = 8
-        cardView.translatesAutoresizingMaskIntoConstraints = false
-        
-        // Create button for tapping
-        let button = UIButton(type: .system)
-        button.backgroundColor = UIColor.clear
-        button.translatesAutoresizingMaskIntoConstraints = false
-        button.addTarget(self, action: #selector(clipboardItemTapped(_:)), for: .touchUpInside)
-        button.tag = clipboardItems.firstIndex(where: { $0.id == item.id }) ?? 0
-        
-        // Header with content type, timestamp, and app icon
-        let headerView = UIView()
-        headerView.translatesAutoresizingMaskIntoConstraints = false
-        
-        // Content type and timestamp
+    private func createItemView(for item: SimpleClipboardItem) -> UIView {
+        let itemView: UIView
         let contentType = ContentType(rawValue: item.contentType) ?? .text
-        let timeAgo = formatTimeAgo(item.createdAt)
         
-        let typeLabel = UILabel()
-        typeLabel.text = contentType.displayName
-        typeLabel.font = UIFont.systemFont(ofSize: 14, weight: .medium)
-        typeLabel.textColor = .label
-        typeLabel.translatesAutoresizingMaskIntoConstraints = false
-        
-        let timeLabel = UILabel()
-        timeLabel.text = timeAgo
-        timeLabel.font = UIFont.systemFont(ofSize: 14)
-        timeLabel.textColor = .secondaryLabel
-        timeLabel.translatesAutoresizingMaskIntoConstraints = false
-        
-        // App icon
-        var appIconView: UIImageView?
-        if let iconData = item.sourceAppIcon, let image = UIImage(data: iconData) {
-            let iconView = UIImageView(image: image)
-            iconView.translatesAutoresizingMaskIntoConstraints = false
-            iconView.contentMode = .scaleAspectFit
-            iconView.layer.cornerRadius = 4
-            iconView.clipsToBounds = true
-            appIconView = iconView
-        }
-        
-        // Content preview
-        let contentLabel = UILabel()
-        contentLabel.text = String(item.content.prefix(120))
-        contentLabel.font = UIFont.systemFont(ofSize: 16)
-        contentLabel.textColor = .label
-        contentLabel.numberOfLines = 0
-        contentLabel.lineBreakMode = .byWordWrapping
-        contentLabel.translatesAutoresizingMaskIntoConstraints = false
-        
-        // Layout header
-        headerView.addSubview(typeLabel)
-        headerView.addSubview(timeLabel)
-        if let iconView = appIconView {
-            headerView.addSubview(iconView)
-        }
-        
-        // Layout card
-        cardView.addSubview(button)
-        cardView.addSubview(headerView)
-        cardView.addSubview(contentLabel)
-        
-        // Card constraints
-        let cardWidth: CGFloat = 200
-        let cardHeight: CGFloat = 180
-        
-        NSLayoutConstraint.activate([
-            cardView.widthAnchor.constraint(equalToConstant: cardWidth),
-            cardView.heightAnchor.constraint(equalToConstant: cardHeight),
+        switch contentType {
+        case .text:
+            let textItemView = UIView()
+            textItemView.backgroundColor = .secondarySystemBackground
+            textItemView.layer.cornerRadius = 8
             
-            button.topAnchor.constraint(equalTo: cardView.topAnchor),
-            button.leadingAnchor.constraint(equalTo: cardView.leadingAnchor),
-            button.trailingAnchor.constraint(equalTo: cardView.trailingAnchor),
-            button.bottomAnchor.constraint(equalTo: cardView.bottomAnchor),
-            
-            headerView.topAnchor.constraint(equalTo: cardView.topAnchor, constant: 16),
-            headerView.leadingAnchor.constraint(equalTo: cardView.leadingAnchor, constant: 16),
-            headerView.trailingAnchor.constraint(equalTo: cardView.trailingAnchor, constant: -16),
-            headerView.heightAnchor.constraint(equalToConstant: 24),
-            
-            typeLabel.leadingAnchor.constraint(equalTo: headerView.leadingAnchor),
-            typeLabel.centerYAnchor.constraint(equalTo: headerView.centerYAnchor),
-            
-            timeLabel.leadingAnchor.constraint(equalTo: typeLabel.trailingAnchor, constant: 8),
-            timeLabel.centerYAnchor.constraint(equalTo: headerView.centerYAnchor),
-            
-            contentLabel.topAnchor.constraint(equalTo: headerView.bottomAnchor, constant: 12),
-            contentLabel.leadingAnchor.constraint(equalTo: cardView.leadingAnchor, constant: 16),
-            contentLabel.trailingAnchor.constraint(equalTo: cardView.trailingAnchor, constant: -16),
-            contentLabel.bottomAnchor.constraint(lessThanOrEqualTo: cardView.bottomAnchor, constant: -16)
-        ])
-        
-        // App icon constraints
-        if let iconView = appIconView {
+            let label = UILabel()
+            label.text = item.content
+            label.font = .systemFont(ofSize: 14)
+            label.textColor = .label
+            label.numberOfLines = 0
+            label.translatesAutoresizingMaskIntoConstraints = false
+            textItemView.addSubview(label)
             NSLayoutConstraint.activate([
-                iconView.trailingAnchor.constraint(equalTo: headerView.trailingAnchor),
-                iconView.centerYAnchor.constraint(equalTo: headerView.centerYAnchor),
-                iconView.widthAnchor.constraint(equalToConstant: 20),
-                iconView.heightAnchor.constraint(equalToConstant: 20)
+                label.leadingAnchor.constraint(equalTo: textItemView.leadingAnchor, constant: 8),
+                label.trailingAnchor.constraint(equalTo: textItemView.trailingAnchor, constant: -8),
+                label.topAnchor.constraint(equalTo: textItemView.topAnchor, constant: 8),
+                label.bottomAnchor.constraint(equalTo: textItemView.bottomAnchor, constant: -8)
             ])
+            itemView = textItemView
+            
+        case .image:
+            let imageItemView = UIView()
+            imageItemView.backgroundColor = .secondarySystemBackground
+            imageItemView.layer.cornerRadius = 8
+            
+            if let imageData = Data(base64Encoded: item.content), let image = UIImage(data: imageData) {
+                let imageView = UIImageView(image: image)
+                imageView.contentMode = .scaleAspectFit
+                imageView.clipsToBounds = true
+                imageView.translatesAutoresizingMaskIntoConstraints = false
+                imageItemView.addSubview(imageView)
+                NSLayoutConstraint.activate([
+                    imageView.leadingAnchor.constraint(equalTo: imageItemView.leadingAnchor),
+                    imageView.trailingAnchor.constraint(equalTo: imageItemView.trailingAnchor),
+                    imageView.topAnchor.constraint(equalTo: imageItemView.topAnchor),
+                    imageView.bottomAnchor.constraint(equalTo: imageItemView.bottomAnchor)
+                ])
+            }
+            itemView = imageItemView
+            
+        case .url:
+            itemView = LinkPreviewCard(url: item.content)
+            
+        case .file:
+            let fileItemView = UIView()
+            fileItemView.backgroundColor = .secondarySystemBackground
+            fileItemView.layer.cornerRadius = 8
+            
+            let label = UILabel()
+            label.text = item.content
+            label.font = .systemFont(ofSize: 14)
+            label.textColor = .systemBlue
+            label.numberOfLines = 0
+            label.translatesAutoresizingMaskIntoConstraints = false
+            fileItemView.addSubview(label)
+            NSLayoutConstraint.activate([
+                label.leadingAnchor.constraint(equalTo: fileItemView.leadingAnchor, constant: 8),
+                label.trailingAnchor.constraint(equalTo: fileItemView.trailingAnchor, constant: -8),
+                label.topAnchor.constraint(equalTo: fileItemView.topAnchor, constant: 8),
+                label.bottomAnchor.constraint(equalTo: fileItemView.bottomAnchor, constant: -8)
+            ])
+            itemView = fileItemView
         }
         
-        return cardView
+        itemView.translatesAutoresizingMaskIntoConstraints = false
+        itemView.widthAnchor.constraint(equalToConstant: 150).isActive = true
+        
+        let tapGesture = UITapGestureRecognizer(target: self, action: #selector(itemTapped(_:)))
+        itemView.addGestureRecognizer(tapGesture)
+        itemView.isUserInteractionEnabled = true
+        itemView.tag = item.id.hashValue
+        
+        return itemView
     }
     
     private func showError(_ message: String) {
@@ -532,12 +513,13 @@ class KeyboardViewController: UIInputViewController {
     
     // MARK: - Actions
     
-    @objc private func clipboardItemTapped(_ sender: UIButton) {
-        let index = sender.tag
-        guard index < clipboardItems.count else { return }
+    @objc private func itemTapped(_ sender: UITapGestureRecognizer) {
+        guard let tappedView = sender.view else { return }
+        let itemId = tappedView.tag
         
-        let item = clipboardItems[index]
-        pasteClipboardItem(item)
+        if let item = clipboardItems.first(where: { $0.id.hashValue == itemId }) {
+            pasteClipboardItem(item)
+        }
     }
     
     private func pasteClipboardItem(_ item: SimpleClipboardItem) {
