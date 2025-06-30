@@ -382,7 +382,7 @@
 				DEVELOPMENT_TEAM = QA3SD355GU;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = KopiKeyboard/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = KopiKeyboard;
+				INFOPLIST_KEY_CFBundleDisplayName = kopi;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				IPHONEOS_DEPLOYMENT_TARGET = 18.5;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -410,7 +410,7 @@
 				DEVELOPMENT_TEAM = QA3SD355GU;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = KopiKeyboard/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = KopiKeyboard;
+				INFOPLIST_KEY_CFBundleDisplayName = kopi;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				IPHONEOS_DEPLOYMENT_TARGET = 18.5;
 				LD_RUNPATH_SEARCH_PATHS = (

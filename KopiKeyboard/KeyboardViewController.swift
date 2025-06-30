@@ -494,6 +494,7 @@ class KeyboardViewController: UIInputViewController {
         
         itemView.translatesAutoresizingMaskIntoConstraints = false
         itemView.widthAnchor.constraint(equalToConstant: 150).isActive = true
+        itemView.heightAnchor.constraint(equalToConstant: 150).isActive = true
         
         let tapGesture = UITapGestureRecognizer(target: self, action: #selector(itemTapped(_:)))
         itemView.addGestureRecognizer(tapGesture)
