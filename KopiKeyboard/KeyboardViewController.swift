@@ -424,84 +424,144 @@ class KeyboardViewController: UIInputViewController {
     }
     
     private func createItemView(for item: SimpleClipboardItem) -> UIView {
-        let itemView: UIView
-        let contentType = ContentType(rawValue: item.contentType) ?? .text
+        let cardView = UIView()
+        cardView.backgroundColor = UIColor.secondarySystemBackground
+        cardView.layer.cornerRadius = 16
+        cardView.layer.shadowColor = UIColor.black.cgColor
+        cardView.layer.shadowOffset = CGSize(width: 0, height: 2)
+        cardView.layer.shadowOpacity = 0.05
+        cardView.layer.shadowRadius = 8
+        cardView.translatesAutoresizingMaskIntoConstraints = false
         
-        switch contentType {
-        case .text:
-            let textItemView = UIView()
-            textItemView.backgroundColor = .secondarySystemBackground
-            textItemView.layer.cornerRadius = 8
-            
-            let label = UILabel()
-            label.text = item.content
-            label.font = .systemFont(ofSize: 14)
-            label.textColor = .label
-            label.numberOfLines = 0
-            label.translatesAutoresizingMaskIntoConstraints = false
-            textItemView.addSubview(label)
-            NSLayoutConstraint.activate([
-                label.leadingAnchor.constraint(equalTo: textItemView.leadingAnchor, constant: 8),
-                label.trailingAnchor.constraint(equalTo: textItemView.trailingAnchor, constant: -8),
-                label.topAnchor.constraint(equalTo: textItemView.topAnchor, constant: 8),
-                label.bottomAnchor.constraint(equalTo: textItemView.bottomAnchor, constant: -8)
-            ])
-            itemView = textItemView
-            
-        case .image:
-            let imageItemView = UIView()
-            imageItemView.backgroundColor = .secondarySystemBackground
-            imageItemView.layer.cornerRadius = 8
-            
-            if let imageData = Data(base64Encoded: item.content), let image = UIImage(data: imageData) {
-                let imageView = UIImageView(image: image)
-                imageView.contentMode = .scaleAspectFit
-                imageView.clipsToBounds = true
-                imageView.translatesAutoresizingMaskIntoConstraints = false
-                imageItemView.addSubview(imageView)
-                NSLayoutConstraint.activate([
-                    imageView.leadingAnchor.constraint(equalTo: imageItemView.leadingAnchor),
-                    imageView.trailingAnchor.constraint(equalTo: imageItemView.trailingAnchor),
-                    imageView.topAnchor.constraint(equalTo: imageItemView.topAnchor),
-                    imageView.bottomAnchor.constraint(equalTo: imageItemView.bottomAnchor)
-                ])
-            }
-            itemView = imageItemView
-            
-        case .url:
-            itemView = LinkPreviewCard(url: item.content)
-            
-        case .file:
-            let fileItemView = UIView()
-            fileItemView.backgroundColor = .secondarySystemBackground
-            fileItemView.layer.cornerRadius = 8
-            
-            let label = UILabel()
-            label.text = item.content
-            label.font = .systemFont(ofSize: 14)
-            label.textColor = .systemBlue
-            label.numberOfLines = 0
-            label.translatesAutoresizingMaskIntoConstraints = false
-            fileItemView.addSubview(label)
-            NSLayoutConstraint.activate([
-                label.leadingAnchor.constraint(equalTo: fileItemView.leadingAnchor, constant: 8),
-                label.trailingAnchor.constraint(equalTo: fileItemView.trailingAnchor, constant: -8),
-                label.topAnchor.constraint(equalTo: fileItemView.topAnchor, constant: 8),
-                label.bottomAnchor.constraint(equalTo: fileItemView.bottomAnchor, constant: -8)
-            ])
-            itemView = fileItemView
+        // Header with content type, timestamp, and app icon
+        let headerView = UIView()
+        headerView.translatesAutoresizingMaskIntoConstraints = false
+        
+        // Content type and timestamp
+        let contentType = ContentType(rawValue: item.contentType) ?? .text
+        let timeAgo = formatTimeAgo(item.createdAt)
+        
+        let typeLabel = UILabel()
+        typeLabel.text = contentType.displayName
+        typeLabel.font = UIFont.systemFont(ofSize: 14, weight: .medium)
+        typeLabel.textColor = .label
+        typeLabel.translatesAutoresizingMaskIntoConstraints = false
+        
+        let timeLabel = UILabel()
+        timeLabel.text = timeAgo
+        timeLabel.font = UIFont.systemFont(ofSize: 14)
+        timeLabel.textColor = .secondaryLabel
+        timeLabel.translatesAutoresizingMaskIntoConstraints = false
+        
+        // App icon
+        var appIconView: UIImageView?
+        if let iconData = item.sourceAppIcon, let image = UIImage(data: iconData) {
+            let iconView = UIImageView(image: image)
+            iconView.translatesAutoresizingMaskIntoConstraints = false
+            iconView.contentMode = .scaleAspectFit
+            iconView.layer.cornerRadius = 4
+            iconView.clipsToBounds = true
+            appIconView = iconView
         }
         
-        itemView.translatesAutoresizingMaskIntoConstraints = false
-        itemView.widthAnchor.constraint(equalToConstant: 150).isActive = true
-        itemView.heightAnchor.constraint(equalToConstant: 150).isActive = true
+        // Content preview based on type
+        let contentView: UIView
+        switch contentType {
+        case .text:
+            let label = UILabel()
+            label.text = String(item.content.prefix(120))
+            label.font = UIFont.systemFont(ofSize: 16)
+            label.textColor = .label
+            label.numberOfLines = 0
+            label.lineBreakMode = .byWordWrapping
+            label.translatesAutoresizingMaskIntoConstraints = false
+            contentView = label
+            
+        case .image:
+            if let imageData = Data(base64Encoded: item.content), let image = UIImage(data: imageData) {
+                let imageView = UIImageView(image: image)
+                imageView.contentMode = .scaleAspectFill
+                imageView.clipsToBounds = true
+                imageView.translatesAutoresizingMaskIntoConstraints = false
+                contentView = imageView
+            } else {
+                let label = UILabel()
+                label.text = "Image"
+                label.font = UIFont.systemFont(ofSize: 16)
+                label.textColor = .secondaryLabel
+                label.translatesAutoresizingMaskIntoConstraints = false
+                contentView = label
+            }
+            
+        case .url:
+            let linkPreview = LinkPreviewCard(url: item.content)
+            linkPreview.translatesAutoresizingMaskIntoConstraints = false
+            contentView = linkPreview
+            
+        case .file:
+            let label = UILabel()
+            label.text = String(item.content.prefix(120))
+            label.font = UIFont.systemFont(ofSize: 16)
+            label.textColor = .systemBlue
+            label.numberOfLines = 0
+            label.lineBreakMode = .byWordWrapping
+            label.translatesAutoresizingMaskIntoConstraints = false
+            contentView = label
+        }
         
+        // Layout header
+        headerView.addSubview(typeLabel)
+        headerView.addSubview(timeLabel)
+        if let iconView = appIconView {
+            headerView.addSubview(iconView)
+        }
+        
+        // Layout card
+        cardView.addSubview(headerView)
+        cardView.addSubview(contentView)
+        
+        // Card constraints
+        let cardWidth: CGFloat = 200
+        let cardHeight: CGFloat = 180
+        
+        NSLayoutConstraint.activate([
+            cardView.widthAnchor.constraint(equalToConstant: cardWidth),
+            cardView.heightAnchor.constraint(equalToConstant: cardHeight),
+            
+            headerView.topAnchor.constraint(equalTo: cardView.topAnchor, constant: 16),
+            headerView.leadingAnchor.constraint(equalTo: cardView.leadingAnchor, constant: 16),
+            headerView.trailingAnchor.constraint(equalTo: cardView.trailingAnchor, constant: -16),
+            headerView.heightAnchor.constraint(equalToConstant: 24),
+            
+            typeLabel.leadingAnchor.constraint(equalTo: headerView.leadingAnchor),
+            typeLabel.centerYAnchor.constraint(equalTo: headerView.centerYAnchor),
+            
+            timeLabel.leadingAnchor.constraint(equalTo: typeLabel.trailingAnchor, constant: 8),
+            timeLabel.centerYAnchor.constraint(equalTo: headerView.centerYAnchor),
+            
+            contentView.topAnchor.constraint(equalTo: headerView.bottomAnchor, constant: 12),
+            contentView.leadingAnchor.constraint(equalTo: cardView.leadingAnchor, constant: 16),
+            contentView.trailingAnchor.constraint(equalTo: cardView.trailingAnchor, constant: -16),
+            contentView.bottomAnchor.constraint(lessThanOrEqualTo: cardView.bottomAnchor, constant: -16)
+        ])
+        
+        // App icon constraints
+        if let iconView = appIconView {
+            NSLayoutConstraint.activate([
+                iconView.trailingAnchor.constraint(equalTo: headerView.trailingAnchor),
+                iconView.centerYAnchor.constraint(equalTo: headerView.centerYAnchor),
+                iconView.widthAnchor.constraint(equalToConstant: 20),
+                iconView.heightAnchor.constraint(equalToConstant: 20)
+            ])
+        }
+        
+        // Add tap gesture
         let tapGesture = UITapGestureRecognizer(target: self, action: #selector(itemTapped(_:)))
-        itemView.addGestureRecognizer(tapGesture)
-        itemView.isUserInteractionEnabled = true
-        itemView.tag = item.id.hashValue
+        cardView.addGestureRecognizer(tapGesture)
+        cardView.isUserInteractionEnabled = true
+        cardView.tag = item.id.hashValue
         
-        return itemView
+        return cardView
     }
     
     private func showError(_ message: String) {
