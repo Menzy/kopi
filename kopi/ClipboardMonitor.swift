@@ -11,6 +11,7 @@ import Combine
 import Cocoa
 import CoreData
 import UniformTypeIdentifiers
+import AVFoundation
 
 // MARK: - Notifications
 extension Notification.Name {
@@ -107,6 +108,21 @@ class ClipboardMonitor: ObservableObject {
     
     // MARK: - Private Methods
     
+    // MARK: - Feedback Methods
+    
+    private func playClipboardSound() {
+        // Play the user's current system alert sound (like Bubble, Crystal, etc.)
+        // This will play whatever sound the user has selected in System Preferences > Sound > Alert sound
+        NSSound.beep()
+    }
+    
+    private func animateMenuBarIcon() {
+        // Trigger menu bar icon animation
+        DispatchQueue.main.async {
+            MenuBarManager.shared.animateIcon()
+        }
+    }
+    
     // INSTANT APP ACTIVATION DETECTION - triggered immediately when apps switch
     @objc private func appDidActivate(_ notification: Notification) {
         if let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication {
@@ -186,6 +202,10 @@ class ClipboardMonitor: ObservableObject {
         // IMMEDIATELY save to local storage on main thread - no delays
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
+            
+            // INSTANT FEEDBACK: Play sound and animate icon immediately
+            self.playClipboardSound()
+            self.animateMenuBarIcon()
             
             // Save immediately to local Core Data storage
             let dataManager = ClipboardDataManager.shared

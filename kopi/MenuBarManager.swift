@@ -323,6 +323,36 @@ class MenuBarManager: NSObject, ObservableObject {
             NSStatusBar.system.removeStatusItem(statusItem)
         }
     }
+    
+    // MARK: - Animation Methods
+    
+    func animateIcon() {
+        guard let statusItem = statusItem, let button = statusItem.button else { return }
+        
+        // Create very quick slide animation: move right 3 pixels, then back
+        let originalFrame = button.frame
+        let slideDistance: CGFloat = 3.0
+        let animationDuration: TimeInterval = 0.08 // Very quick animation
+        
+        // Animate to the right
+        NSAnimationContext.runAnimationGroup({ context in
+            context.duration = animationDuration
+            context.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            button.animator().frame = NSRect(
+                x: originalFrame.origin.x + slideDistance,
+                y: originalFrame.origin.y,
+                width: originalFrame.width,
+                height: originalFrame.height
+            )
+        }, completionHandler: {
+            // Animate back to original position
+            NSAnimationContext.runAnimationGroup({ context in
+                context.duration = animationDuration
+                context.timingFunction = CAMediaTimingFunction(name: .easeIn)
+                button.animator().frame = originalFrame
+            })
+        })
+    }
 }
 
 // MARK: - NSWindowDelegate
