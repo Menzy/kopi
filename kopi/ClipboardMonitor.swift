@@ -99,6 +99,8 @@ class ClipboardMonitor: ObservableObject {
         // Remove notification observers
         NotificationCenter.default.removeObserver(self, name: NSApplication.didBecomeActiveNotification, object: nil)
         NotificationCenter.default.removeObserver(self, name: NSWorkspace.didActivateApplicationNotification, object: nil)
+        
+        print("📋 Clipboard monitoring stopped")
     }
     
     func forceCheck() {
@@ -111,7 +113,6 @@ class ClipboardMonitor: ObservableObject {
     // MARK: - Feedback Methods
     
     private func playClipboardSound() {
-        // Play the user's current system alert sound (like Bubble, Crystal, etc.)
         // This will play whatever sound the user has selected in System Preferences > Sound > Alert sound
         NSSound.beep()
     }

@@ -18,6 +18,7 @@ class MenuBarManager: NSObject, ObservableObject {
     
     @Published var isPinboardVisible = false
     @Published var isMainWindowVisible = false
+    @Published var isMonitoringPaused = false
     
     override init() {
         super.init()
@@ -39,14 +40,14 @@ class MenuBarManager: NSObject, ObservableObject {
             
             // Set up the button
             if let button = statusItem.button {
-                // Use kopiMenu icon
-                button.image = NSImage(named: "kopiMenu")
                 button.action = #selector(self.handleButtonClick)
                 button.target = self
-                button.toolTip = "Show Kopi Clipboard"
                 
                 // Enable right-click detection
                 button.sendAction(on: [.leftMouseUp, .rightMouseUp])
+                
+                // Set initial icon and appearance
+                self.updateMenuBarIcon()
             }
         }
     }
@@ -70,15 +71,6 @@ class MenuBarManager: NSObject, ObservableObject {
         
         let menu = NSMenu()
         
-        // Show/Hide Pinboard option
-        let pinboardItem = NSMenuItem(
-            title: isPinboardVisible ? "Hide Pinboard" : "Show Pinboard", 
-            action: #selector(togglePinboard), 
-            keyEquivalent: ""
-        )
-        pinboardItem.target = self
-        menu.addItem(pinboardItem)
-        
         // Show Main Window option
         let mainWindowItem = NSMenuItem(
             title: "Show Main Window", 
@@ -87,6 +79,18 @@ class MenuBarManager: NSObject, ObservableObject {
         )
         mainWindowItem.target = self
         menu.addItem(mainWindowItem)
+        
+        menu.addItem(NSMenuItem.separator())
+        
+        // Pause/Resume Monitoring option
+        let pauseItem = NSMenuItem(
+            title: isMonitoringPaused ? "Resume" : "Pause",
+            action: #selector(toggleMonitoring),
+            keyEquivalent: ""
+        )
+        pauseItem.target = self
+        pauseItem.image = NSImage(systemSymbolName: isMonitoringPaused ? "play.fill" : "pause.fill", accessibilityDescription: nil)
+        menu.addItem(pauseItem)
         
         menu.addItem(NSMenuItem.separator())
         
@@ -315,6 +319,52 @@ class MenuBarManager: NSObject, ObservableObject {
     @MainActor
     @objc private func quitApp() {
         NSApplication.shared.terminate(nil)
+    }
+    
+    // MARK: - Pause/Resume Methods
+    
+    @MainActor
+    @objc private func toggleMonitoring() {
+        if isMonitoringPaused {
+            resumeMonitoring()
+        } else {
+            pauseMonitoring()
+        }
+    }
+    
+    @MainActor
+    private func pauseMonitoring() {
+        isMonitoringPaused = true
+        ClipboardMonitor.shared.stopMonitoring()
+        updateMenuBarIcon()
+        print("⏸️ Clipboard monitoring paused")
+    }
+    
+    @MainActor
+    private func resumeMonitoring() {
+        isMonitoringPaused = false
+        ClipboardMonitor.shared.startMonitoring()
+        updateMenuBarIcon()
+        print("▶️ Clipboard monitoring resumed")
+    }
+    
+    @MainActor
+    private func updateMenuBarIcon() {
+        guard let statusItem = statusItem, let button = statusItem.button else { return }
+        
+        if isMonitoringPaused {
+            // Gray out the icon when paused
+            button.image = NSImage(named: "kopiMenu")
+            button.image?.isTemplate = true
+            button.alphaValue = 0.5
+            button.toolTip = "Kopi Clipboard (Paused)"
+        } else {
+            // Normal icon when active
+            button.image = NSImage(named: "kopiMenu")
+            button.image?.isTemplate = false
+            button.alphaValue = 1.0
+            button.toolTip = "Show Kopi Clipboard"
+        }
     }
     
     deinit {
