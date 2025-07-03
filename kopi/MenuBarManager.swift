@@ -73,7 +73,7 @@ class MenuBarManager: NSObject, ObservableObject {
         
         // Show Main Window option
         let mainWindowItem = NSMenuItem(
-            title: "Show Main Window", 
+            title: "Main Window", 
             action: #selector(showMainWindow), 
             keyEquivalent: "m"
         )
