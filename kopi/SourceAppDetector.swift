@@ -18,23 +18,32 @@ struct SourceAppInfo {
 class SourceAppDetector {
     static let shared = SourceAppDetector()
     
+    // Track app switching history to better detect source apps
+    private var appHistory: [SourceAppInfo] = []
+    private let maxHistorySize = 5
+    
     private init() {}
     
     func detectCurrentApp() -> SourceAppInfo {
         // Try to get the frontmost application using NSWorkspace (most reliable)
         if let frontmostApp = NSWorkspace.shared.frontmostApplication {
-            // Skip our own app - we want the app that was active before us
-            if frontmostApp.bundleIdentifier == "com.wanmenzy.kopi" || 
-               frontmostApp.bundleIdentifier == Bundle.main.bundleIdentifier {
-                // Get the previously active app
-                return getPreviouslyActiveApp()
-            }
-            
-            return SourceAppInfo(
+            let currentAppInfo = SourceAppInfo(
                 bundleID: frontmostApp.bundleIdentifier,
                 name: frontmostApp.localizedName,
                 iconData: getAppIconData(for: frontmostApp)
             )
+            
+            // Update app history for better tracking
+            updateAppHistory(currentAppInfo)
+            
+            // Skip our own app - we want the app that was active before us
+            if frontmostApp.bundleIdentifier == "com.wanmenzy.kopi" || 
+               frontmostApp.bundleIdentifier == Bundle.main.bundleIdentifier {
+                // Get the previously active app from history
+                return getPreviouslyActiveAppFromHistory()
+            }
+            
+            return currentAppInfo
         }
         
         // Last resort: return unknown
@@ -54,6 +63,41 @@ class SourceAppDetector {
     }
     
     // MARK: - Private Methods
+    
+    private func updateAppHistory(_ appInfo: SourceAppInfo) {
+        // Don't add our own app to history
+        if appInfo.bundleID == "com.wanmenzy.kopi" || 
+           appInfo.bundleID == Bundle.main.bundleIdentifier {
+            return
+        }
+        
+        // Don't add if it's the same as the last app in history
+        if let lastApp = appHistory.first,
+           lastApp.bundleID == appInfo.bundleID {
+            return
+        }
+        
+        // Add to front of history
+        appHistory.insert(appInfo, at: 0)
+        
+        // Keep history size manageable
+        if appHistory.count > maxHistorySize {
+            appHistory.removeLast()
+        }
+    }
+    
+    private func getPreviouslyActiveAppFromHistory() -> SourceAppInfo {
+        // Return the most recent non-kopi app from history
+        for app in appHistory {
+            if app.bundleID != "com.wanmenzy.kopi" && 
+               app.bundleID != Bundle.main.bundleIdentifier {
+                return app
+            }
+        }
+        
+        // Fallback to the old method if history is empty
+        return getPreviouslyActiveApp()
+    }
     
     private func getAppIconData(for app: NSRunningApplication) -> Data? {
         guard let icon = app.icon else { return nil }

@@ -22,3 +22,5 @@ DerivedData/
 *.temp
 *.swp
 *.swo 
+
+install-kopi.sh

@@ -32,6 +32,10 @@ class ClipboardMonitor: ObservableObject {
     // Track the frontmost app before clipboard changes
     private var lastFrontmostApp: SourceAppInfo?
     
+    // IMMEDIATE SOURCE APP CAPTURE - capture the active app continuously
+    private var currentActiveApp: SourceAppInfo?
+    private var appTrackingTimer: Timer?
+    
     // Published properties for UI updates
     @Published var isMonitoring: Bool = false
     @Published var lastClipboardContent: String = ""
@@ -54,15 +58,30 @@ class ClipboardMonitor: ObservableObject {
         isMonitoring = true
         lastChangeCount = pasteboard.changeCount
         
-        // Capture initial frontmost app
-        lastFrontmostApp = sourceAppDetector.detectCurrentApp()
+        // IMMEDIATE SOURCE APP TRACKING - Track active app continuously at high frequency
+        // This ensures we always have the correct source app before clipboard changes
+        currentActiveApp = sourceAppDetector.detectCurrentApp()
+        lastFrontmostApp = currentActiveApp
         
-        // Start moderate-frequency timer-based monitoring (polling every 0.2 seconds for good responsiveness without overwhelming)
-        monitoringTimer = Timer.scheduledTimer(withTimeInterval: 0.2, repeats: true) { [weak self] _ in
+        // Listen for app activation changes using NSWorkspace notifications for instant updates
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(appDidActivate(_:)),
+            name: NSWorkspace.didActivateApplicationNotification,
+            object: nil
+        )
+        
+        // Start HIGH-FREQUENCY app tracking (every 50ms) to catch app switches immediately
+        appTrackingTimer = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { [weak self] _ in
+            self?.trackActiveApp()
+        }
+        
+        // Start IMMEDIATE clipboard monitoring (every 50ms for instant detection)
+        monitoringTimer = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { [weak self] _ in
             self?.checkClipboardChanges()
         }
         
-        print("📋 Clipboard monitoring started successfully!")
+        print("📋 Clipboard monitoring started with immediate source app tracking!")
     }
     
     func stopMonitoring() {
@@ -73,8 +92,12 @@ class ClipboardMonitor: ObservableObject {
         monitoringTimer?.invalidate()
         monitoringTimer = nil
         
+        appTrackingTimer?.invalidate()
+        appTrackingTimer = nil
+        
         // Remove notification observers
         NotificationCenter.default.removeObserver(self, name: NSApplication.didBecomeActiveNotification, object: nil)
+        NotificationCenter.default.removeObserver(self, name: NSWorkspace.didActivateApplicationNotification, object: nil)
     }
     
     func forceCheck() {
@@ -83,6 +106,58 @@ class ClipboardMonitor: ObservableObject {
     }
     
     // MARK: - Private Methods
+    
+    // INSTANT APP ACTIVATION DETECTION - triggered immediately when apps switch
+    @objc private func appDidActivate(_ notification: Notification) {
+        if let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication {
+            let newActiveApp = SourceAppInfo(
+                bundleID: app.bundleIdentifier,
+                name: app.localizedName,
+                iconData: getAppIconData(for: app)
+            )
+            
+            // Update immediately on app switch
+            currentActiveApp = newActiveApp
+            print("🚀 INSTANT app switch detected: \(newActiveApp.name ?? "Unknown") (\(newActiveApp.bundleID ?? "unknown"))")
+        }
+    }
+    
+    // Helper method to get app icon data
+    private func getAppIconData(for app: NSRunningApplication) -> Data? {
+        guard let icon = app.icon else { return nil }
+        
+        // Resize icon to a reasonable size (32x32)
+        let targetSize = NSSize(width: 32, height: 32)
+        let resizedIcon = NSImage(size: targetSize)
+        
+        resizedIcon.lockFocus()
+        icon.draw(in: NSRect(origin: .zero, size: targetSize))
+        resizedIcon.unlockFocus()
+        
+        // Convert to PNG data
+        guard let tiffData = resizedIcon.tiffRepresentation,
+              let bitmap = NSBitmapImageRep(data: tiffData),
+              let pngData = bitmap.representation(using: .png, properties: [:]) else {
+            return nil
+        }
+        
+        return pngData
+    }
+    
+    // IMMEDIATE SOURCE APP TRACKING - continuously track the active app
+    private func trackActiveApp() {
+        let newActiveApp = sourceAppDetector.detectCurrentApp()
+        
+        // Only update if the app actually changed (avoid unnecessary work)
+        if newActiveApp.bundleID != currentActiveApp?.bundleID {
+            currentActiveApp = newActiveApp
+            // Don't print for our own app to reduce noise
+            if newActiveApp.bundleID != Bundle.main.bundleIdentifier && 
+               newActiveApp.bundleID != "com.wanmenzy.kopi" {
+                print("🎯 Active app changed to: \(newActiveApp.name ?? "Unknown") (\(newActiveApp.bundleID ?? "unknown"))")
+            }
+        }
+    }
     
     private func checkClipboardChanges() {
         let currentChangeCount = pasteboard.changeCount
@@ -102,9 +177,11 @@ class ClipboardMonitor: ObservableObject {
             return
         }
         
-        // Capture the frontmost app IMMEDIATELY before any async operations
-        let sourceApp = lastFrontmostApp ?? sourceAppDetector.detectCurrentApp()
-        lastFrontmostApp = sourceAppDetector.detectCurrentApp() // Update for next time
+        // USE THE CONTINUOUSLY TRACKED SOURCE APP - this is the app that was active when copy happened
+        // Since we track the active app continuously, currentActiveApp contains the correct source
+        let sourceApp = currentActiveApp ?? sourceAppDetector.detectCurrentApp()
+        
+        print("📋 Clipboard change detected! Source app: \(sourceApp.name ?? "Unknown") (\(sourceApp.bundleID ?? "unknown"))")
         
         // IMMEDIATELY save to local storage on main thread - no delays
         DispatchQueue.main.async { [weak self] in
